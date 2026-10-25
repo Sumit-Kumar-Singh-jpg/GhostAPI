@@ -1,0 +1,131 @@
+export type Release = 'r1' | 'r2';
+export type Health =
+  'NotEnrolled' | 'Healthy' | 'Suspected' | 'Inspecting' | 'Degraded' | 'Blocked' | 'Escalated';
+export type CandidateState = 'Draft' | 'Verifying' | 'Quarantined' | 'Promoted';
+export type Input = { sku: string; quantity: number };
+export type Check = { id: string; pass: boolean; detail: string };
+export type Observation = {
+  outcome: 'quote' | 'unavailable';
+  sku: string;
+  quantity: number;
+  currency: string;
+  site_release: Release;
+  quote_id: string;
+  source_url: string;
+  observed_at: string;
+  evidence_ids: string[];
+  displayed_price_paise?: number;
+  basis_label_text?: string;
+  price_basis?: string;
+  delivery_fee_paise?: number;
+  reported_total_paise?: number;
+  unit_price_ex_tax_paise?: number;
+  demo_tax_rate_numerator?: number;
+  demo_tax_rate_denominator?: number;
+  tax_amount_paise?: number;
+  reason_code?: string;
+};
+export type Verified = Observation & {
+  workflow_version: number;
+  verified_total_paise?: number;
+  verification_time: string;
+  validation_policy_version: 'QUOTE_SAFETY_V1';
+};
+export type Workflow = {
+  workflow_id: 'supplier_quote';
+  workflow_version: number;
+  mode: 'read_only';
+  allowed_origin: string;
+  start_path: '/catalog' | '/quotes';
+  goal_template_id: 'BASE_QUOTE';
+  observed_schema_id: 'QUOTE_OR_UNAVAILABLE_WF1' | 'QUOTE_OR_UNAVAILABLE_WF2';
+  mandatory_validation_policy_id: 'QUOTE_SAFETY_V1';
+  workflow_invariant_ids: string[];
+  field_alias_ids: string[];
+  goal_clause_ids: string[];
+};
+export type Patch = {
+  from_version: number;
+  candidate_version: number;
+  changes: {
+    start_path: '/quotes';
+    observed_schema_id: 'QUOTE_OR_UNAVAILABLE_WF2';
+    field_alias_ids: string[];
+    goal_clause_ids: string[];
+    workflow_invariant_ids: string[];
+  };
+  rea_evidence_ids: string[];
+};
+export type Evidence = {
+  id: string;
+  kind: 'local-http' | 'operator-har' | 'rea-har';
+  created_at: string;
+  release: Release;
+  origin: string;
+  sha256: string;
+  input: Input;
+  paths: string[];
+  fields: string[];
+  limitations: string[];
+  rea_output?: string;
+};
+export type Run = {
+  id: string;
+  executor: 'local-http' | 'tinyfish';
+  status: 'COMPLETED' | 'FAILED';
+  started_at: string;
+  completed_at: string;
+  input: Input;
+  workflow_version: number;
+  release: Release;
+  observation?: Observation;
+  checks: Check[];
+  result?: Verified;
+  error?: string;
+};
+export type TimelineEvent = {
+  id: string;
+  at: string;
+  kind: 'info' | 'success' | 'warning' | 'error';
+  title: string;
+  detail: string;
+  ref?: string;
+};
+export type Candidate = {
+  id: string;
+  state: CandidateState;
+  workflow: Workflow;
+  patch: Patch;
+  planner: 'rules fallback' | 'openai';
+  evidence_ids: string[];
+  tests: Run[];
+  checks: Check[];
+  created_at: string;
+};
+export type Cycle = {
+  id: string;
+  started_at: string;
+  deadline: number;
+  runs: number;
+  reserved_usd: number;
+  limit_usd: number;
+  status: 'active' | 'completed' | 'expired';
+  release: Release;
+  generation: number;
+};
+export type State = {
+  revision: 1;
+  release: Release;
+  health: Health;
+  active_version: number;
+  activation_history: number[];
+  generation: number;
+  workflows: Workflow[];
+  runs: Run[];
+  events: TimelineEvent[];
+  candidates: Candidate[];
+  evidence: Evidence[];
+  published?: Verified;
+  cycle?: Cycle;
+  outstanding: string[];
+};

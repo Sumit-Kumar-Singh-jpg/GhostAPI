@@ -90,7 +90,7 @@ export function renderWebsites(sites, monitoring) {
                 .join('')}</div>`
             : '';
           const repair = site.repair
-            ? `<div class="repair-review"><h3>Repair proposal ready</h3><p>Review the replacement rules. Applying this proposal fetches the page again and requires every approved field to pass.</p>${site.repair.changed.map((key) => `<div><strong>${esc(key)}</strong><code>Before: ${esc(rule(site.contract.fields.find((f) => f.key === key)))}</code><code>Proposed: ${esc(rule(site.repair.fields.find((f) => f.key === key)))}</code></div>`).join('')}<button class="button primary" data-site-action="repair" data-site-id="${site.id}" ${busy ? 'disabled' : ''}>Verify & apply repair</button></div>`
+            ? `<div class="repair-review"><h3>Repair proposal ready</h3><p>Review the replacement rules. Applying this proposal fetches the page again and requires every approved field to pass.</p>${site.repair.changed.map((key) => `<div><strong>${esc(key)}</strong><code>Before: ${esc(rule(site.contract.fields.find((f) => f.key === key)))}</code><code>Proposed: ${esc(rule(site.repair.fields.find((f) => f.key === key)))}</code><span>Observed now: ${esc(site.repair.fields.find((f) => f.key === key)?.sample)}</span></div>`).join('')}<button class="button primary" data-site-action="repair" data-site-id="${site.id}" ${busy ? 'disabled' : ''}>Verify & apply repair</button></div>`
             : '';
           const history = site.history
             .map(

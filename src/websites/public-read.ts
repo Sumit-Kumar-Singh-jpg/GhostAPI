@@ -68,7 +68,7 @@ export async function readPublicPage(value: string): Promise<PublicPage> {
         (res) => {
           const status = res.statusCode ?? 0;
           if (status >= 300 && status < 400) {
-            res.resume();
+            res.destroy();
             resolve({ status, location: res.headers.location, body: '', contentType: '' });
             return;
           }

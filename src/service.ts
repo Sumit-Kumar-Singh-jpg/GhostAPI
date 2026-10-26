@@ -6,14 +6,33 @@ import { baseline, parseInput, applyPatch } from './domain/policy.js';
 import { assertCycle, newCycle, reserve } from './domain/budget.js';
 import { validateObservation } from './domain/validator.js';
 import { executeLocal } from './integrations/local.js';
+import {
+  browserReservation,
+  executeBrowser,
+  closeTinyfishSession,
+} from './integrations/browser.js';
 import { inspectWithRea, localHar, sanitizeHar } from './integrations/evidence.js';
-import { llmPlan, rulesPlan } from './integrations/planner.js';
+import {
+  aiPlannerProvider,
+  cancelTinyfishPlan,
+  llmPlan,
+  rulesPlan,
+  tinyfishPlan,
+  tinyfishPlannerReservation,
+  type PlannerObservation,
+} from './integrations/planner.js';
+import { compareRepair } from './evaluation.js';
 import { acceptanceInputs, oracleCheck } from './oracle.js';
 import type { Candidate, Cycle, Evidence, Input, Release, Run, Workflow } from './domain/types.js';
 
 export function safeError(error: unknown): string {
   let message = error instanceof Error ? error.message : 'Operation failed';
-  for (const key of ['OPENAI_API_KEY', 'TINYFISH_API_KEY']) {
+  for (const key of [
+    'OPENAI_API_KEY',
+    'TINYFISH_API_KEY',
+    'ADMIN_PASSWORD',
+    'GHOSTAPI_ADMIN_PASSWORD',
+  ]) {
     const secret = process.env[key];
     if (secret) message = message.replaceAll(secret, '[redacted]');
   }
@@ -33,6 +52,61 @@ export class GhostService {
   }
   get active(): Workflow {
     return this.state.workflows.find((w) => w.workflow_version === this.state.active_version)!;
+  }
+  async setExecutor(mode: 'local-http' | 'tinyfish-browser') {
+    if (!['local-http', 'tinyfish-browser'].includes(mode))
+      throw new Error('Unsupported execution mode');
+    if (mode === 'tinyfish-browser' && !process.env.TINYFISH_API_KEY)
+      throw new Error('TinyFish API key is not configured');
+    if (this.state.outstanding.length)
+      throw new Error('Resolve outstanding browser cleanup before changing execution mode.');
+    this.state.executor = mode;
+    if (this.state.cycle) this.state.cycle.status = 'expired';
+    this.state.health = 'NotEnrolled';
+    delete this.state.published;
+    for (const candidate of this.state.candidates)
+      if (['Draft', 'Verifying'].includes(candidate.state)) candidate.state = 'Quarantined';
+    this.store.event(
+      'info',
+      'Execution mode selected',
+      mode === 'tinyfish-browser'
+        ? 'TinyFish remote browser · restricted local HTTP bridge · deterministic reading, not Agent API.'
+        : 'Local HTTP replay.',
+    );
+    await this.store.save();
+  }
+  async reconcileBrowsers() {
+    for (const id of [...this.state.outstanding]) {
+      if (id.startsWith('pending-')) continue;
+      if (id.startsWith('agent:')) await cancelTinyfishPlan(id.slice(6));
+      else await closeTinyfishSession(id);
+      this.state.outstanding = this.state.outstanding.filter((value) => value !== id);
+      this.store.event(
+        'success',
+        'Browser cleanup confirmed',
+        `Provider confirmed termination for ${id}.`,
+      );
+      await this.store.save();
+    }
+    return { outstanding: this.state.outstanding };
+  }
+  async setBudget(value: unknown) {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 1 || value > 10)
+      throw new Error('Cycle reservation cap must be between USD 1 and 10.');
+    if (this.state.outstanding.length)
+      throw new Error('Resolve outstanding provider tasks before changing the cap.');
+    this.state.budget_limit_usd = value;
+    if (this.state.cycle) this.state.cycle.status = 'expired';
+    delete this.state.published;
+    this.state.health = 'NotEnrolled';
+    for (const candidate of this.state.candidates)
+      if (['Draft', 'Verifying'].includes(candidate.state)) candidate.state = 'Quarantined';
+    this.store.event(
+      'info',
+      'Reservation cap selected',
+      `USD ${value.toFixed(2)} per cycle. No provider task started.`,
+    );
+    await this.store.save();
   }
   async exclusive<T>(fn: () => Promise<T>): Promise<T> {
     if (this.busy) throw new Error('busy: another operation is running');
@@ -61,12 +135,14 @@ export class GhostService {
     this.state.cycle = newCycle(
       this.state.release,
       this.state.generation,
-      Number(process.env.CYCLE_BUDGET_USD ?? 1),
+      this.state.budget_limit_usd ?? Number(process.env.CYCLE_BUDGET_USD ?? 1),
     );
     this.store.event(
       'info',
       'Evidence cycle started',
-      'Local HTTP replay. No TinyFish call or charge is represented.',
+      this.state.executor === 'tinyfish-browser'
+        ? 'TinyFish Browser CDP execution through a restricted local HTTP bridge. Browser charges reserved before every session.'
+        : 'Local HTTP replay. No TinyFish call or charge is represented.',
       this.state.cycle.id,
     );
     return this.state.cycle;
@@ -86,11 +162,18 @@ export class GhostService {
     parseInput(input);
     for (let attempt = 0; attempt < 2; attempt++) {
       this.assertCurrent(cycle);
-      const timeout = reserve(cycle, this.state.release, 0);
+      const remote = this.state.executor === 'tinyfish-browser';
+      if (remote && this.state.outstanding.length)
+        throw new Error(
+          'Outstanding browser session cleanup must be reconciled before another billed start.',
+        );
+      const quote = remote ? await browserReservation(cycle.deadline - Date.now()) : undefined;
+      this.assertCurrent(cycle);
+      const timeout = reserve(cycle, this.state.release, quote?.reserved_usd ?? 0);
       await this.store.save();
       const run: Run = {
         id: `attempt-${randomUUID()}`,
-        executor: 'local-http',
+        executor: remote ? 'tinyfish-browser' : 'local-http',
         status: 'FAILED',
         started_at: new Date().toISOString(),
         completed_at: '',
@@ -100,7 +183,27 @@ export class GhostService {
         checks: [],
       };
       try {
-        const execution = await this.execute(workflow, input, timeout);
+        const pending = `pending-${randomUUID()}`;
+        if (remote) {
+          this.state.outstanding.push(pending);
+          await this.store.save();
+        }
+        const execution = remote
+          ? await executeBrowser(workflow, input, timeout, {
+              opened: async (id) => {
+                run.id = id;
+                this.state.outstanding = this.state.outstanding.filter(
+                  (value) => value !== pending,
+                );
+                this.state.outstanding.push(id);
+                await this.store.save();
+              },
+              closed: async (id) => {
+                this.state.outstanding = this.state.outstanding.filter((value) => value !== id);
+                await this.store.save();
+              },
+            })
+          : await this.execute(workflow, input, timeout);
         run.id = execution.id;
         this.assertCurrent(cycle);
         run.observation = execution.observation;
@@ -282,13 +385,11 @@ export class GhostService {
     }
     const nextVersion = Math.max(...this.state.workflows.map((w) => w.workflow_version)) + 1;
     let raw: unknown;
+    let receipt: Candidate['planner_receipt'];
     if (useLlm) {
-      const cost = Number(process.env.PLANNER_MAX_COST_USD);
-      if (!Number.isFinite(cost) || cost <= 0)
-        throw new Error('Configure a verified PLANNER_MAX_COST_USD before an LLM call.');
-      const timeout = reserve(cycle, this.state.release, cost, false);
-      await this.store.save();
-      raw = await llmPlan(this.active, evidence, nextVersion, Math.min(timeout, 30000));
+      const plan = await this.planAi(this.active, evidence, nextVersion, []);
+      raw = plan.patch;
+      receipt = plan.receipt;
     } else raw = rulesPlan(this.active, evidence, nextVersion);
     this.assertCurrent(cycle);
     const { patch, workflow } = applyPatch(
@@ -302,7 +403,8 @@ export class GhostService {
       state: 'Draft',
       workflow,
       patch,
-      planner: useLlm ? 'openai' : 'rules fallback',
+      planner: useLlm ? aiPlannerProvider()! : 'rules fallback',
+      planner_receipt: receipt,
       evidence_ids: [evidence.id],
       tests: [],
       checks: [
@@ -324,6 +426,163 @@ export class GhostService {
     );
     await this.store.save();
     return candidate;
+  }
+  private async planAi(
+    base: Workflow,
+    evidence: Evidence | undefined,
+    version: number,
+    observations: PlannerObservation[],
+  ) {
+    const provider = aiPlannerProvider();
+    if (!provider) throw new Error('No AI planner credential is configured.');
+    const cycle = this.cycle();
+    const cost =
+      provider === 'tinyfish-ai'
+        ? await tinyfishPlannerReservation()
+        : Number(process.env.PLANNER_MAX_COST_USD);
+    if (cost > cycle.limit_usd - cycle.reserved_usd)
+      throw new Error(
+        `AI planner requires a USD ${cost.toFixed(3)} reservation. Select a higher cycle cap before starting a fresh demo.`,
+      );
+    const timeout = reserve(cycle, this.state.release, cost, false);
+    await this.store.save();
+    if (provider === 'openai')
+      return {
+        patch: await llmPlan(base, evidence, version, Math.min(timeout, 60000), observations),
+        receipt: undefined,
+      };
+    const pending = `pending-planner-${randomUUID()}`;
+    this.state.outstanding.push(pending);
+    await this.store.save();
+    return tinyfishPlan(base, evidence, version, Math.min(timeout, 65000), observations, {
+      opened: async (id) => {
+        this.state.outstanding = this.state.outstanding.filter((value) => value !== pending);
+        this.state.outstanding.push(`agent:${id}`);
+        this.store.event(
+          'info',
+          'AI reasoning task started',
+          'TinyFish JSON-only proposal task on an empty page; no supplier navigation requested.',
+          id,
+        );
+        await this.store.save();
+      },
+      closed: async (id) => {
+        this.state.outstanding = this.state.outstanding.filter((value) => value !== `agent:${id}`);
+        this.store.event(
+          'info',
+          'AI reasoning task ended',
+          'Provider task reached a terminal state; proposal still requires policy and replay checks.',
+          id,
+        );
+        await this.store.save();
+      },
+    });
+  }
+  async evaluate(useLlm = false) {
+    if (this.state.outstanding.length)
+      throw new Error('Outstanding browser cleanup must be reconciled first.');
+    if (useLlm && !aiPlannerProvider())
+      throw new Error('Configure the repair model and its charge bound before an LLM comparison.');
+    const evidence = this.state.evidence.findLast(
+      (e) =>
+        e.kind === 'rea-har' &&
+        e.release === this.state.release &&
+        Date.parse(e.created_at) > Date.now() - 360000,
+    );
+    if (!evidence)
+      throw new Error('Capture fresh REA evidence on the current release before comparison.');
+    const base = structuredClone(this.state.workflows[0]!);
+    const observations: PlannerObservation[] = this.state.runs
+      .filter(
+        (run) =>
+          run.workflow_version === base.workflow_version &&
+          run.release === this.state.release &&
+          run.observation,
+      )
+      .map((run) => ({
+        run_id: run.id,
+        fields: Object.keys(run.observation!),
+        price_basis: /before tax/i.test(run.observation!.basis_label_text ?? '')
+          ? 'exclusive'
+          : /incl/i.test(run.observation!.basis_label_text ?? '')
+            ? 'inclusive'
+            : 'unknown',
+        source_url: run.observation!.source_url,
+      }));
+    const previousCycle = this.state.cycle,
+      active = this.state.active_version,
+      id = randomUUID();
+    const budget = (this.state.budget_limit_usd ?? Number(process.env.CYCLE_BUDGET_USD ?? 1)) / 2;
+    let receipt: Candidate['planner_receipt'];
+    try {
+      const report = await compareRepair({
+        id,
+        base,
+        evidence: structuredClone(evidence),
+        version: Math.max(...this.state.workflows.map((w) => w.workflow_version)) + 1,
+        observations,
+        planner: useLlm ? aiPlannerProvider()! : 'rules fallback',
+        model: useLlm
+          ? aiPlannerProvider() === 'openai'
+            ? process.env.OPENAI_MODEL!
+            : 'TinyFish provider-managed model (version not exposed)'
+          : null,
+        executor: this.state.executor ?? 'local-http',
+        reserved: () => this.state.cycle?.reserved_usd ?? 0,
+        receipt: () => receipt,
+        plan: async (selected) => {
+          receipt = undefined;
+          this.state.cycle = newCycle(this.state.release, this.state.generation, budget);
+          await this.store.save();
+          if (!useLlm)
+            return rulesPlan(
+              base,
+              selected,
+              Math.max(...this.state.workflows.map((w) => w.workflow_version)) + 1,
+            );
+          const result = await this.planAi(
+            base,
+            selected,
+            Math.max(...this.state.workflows.map((w) => w.workflow_version)) + 1,
+            observations,
+          );
+          receipt = result.receipt;
+          return result.patch;
+        },
+        replay: async (workflow) => {
+          const runs: Run[] = [];
+          let error: string | undefined;
+          try {
+            for (const input of acceptanceInputs) {
+              const run = await this.run(workflow, input, this.cycle());
+              run.evaluation_id = id;
+              const oracle = oracleCheck(run, this.state.release);
+              run.checks.push(oracle);
+              if (!oracle.pass) delete run.result;
+              runs.push(run);
+              if (run.error?.startsWith('blocked:') || this.state.outstanding.length)
+                throw new Error('Execution blocked or session cleanup unconfirmed.');
+            }
+          } catch (err) {
+            error = safeError(err);
+          }
+          return { runs, reserved_usd: this.state.cycle?.reserved_usd ?? 0, error };
+        },
+      });
+      report.active_version_unchanged = this.state.active_version === active;
+      this.state.evaluations ??= [];
+      this.state.evaluations.push(report);
+      this.store.event(
+        report.status === 'completed' ? 'success' : 'warning',
+        'Comparison evaluated',
+        report.summary,
+        report.id,
+      );
+      return report;
+    } finally {
+      this.state.cycle = previousCycle;
+      await this.store.save();
+    }
   }
   private candidate(id: string) {
     const c = this.state.candidates.find((c) => c.id === id);
@@ -355,7 +614,7 @@ export class GhostService {
       this.store.event(
         'success',
         'Shadow verification passed',
-        'Three independent local HTTP replays passed the oracle. No TinyFish execution represented.',
+        `Three independent ${this.state.executor === 'tinyfish-browser' ? 'TinyFish remote browser' : 'local HTTP'} replays passed the oracle.`,
         candidate.id,
       );
     } catch (err) {
@@ -479,12 +738,16 @@ export class GhostService {
     return run;
   }
   async reset() {
+    if (this.state.outstanding.length)
+      throw new Error('Cannot reset while browser cleanup is outstanding.');
     await writeFile(
       join(this.store.dir, `archive-${Date.now()}-${randomUUID()}.json`),
       JSON.stringify(this.state, null, 2),
       { mode: 0o600 },
     );
     const clean = new Store(this.store.dir, this.portalOrigin).state;
+    clean.executor = this.state.executor ?? 'local-http';
+    clean.budget_limit_usd = this.state.budget_limit_usd;
     this.store.state = clean;
     this.store.event(
       'info',

@@ -1,0 +1,42 @@
+services:
+  ghostapi:
+    build: .
+    restart: unless-stopped
+    init: true
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PUBLIC_ORIGIN: https://${GHOSTAPI_DOMAIN:?Set GHOSTAPI_DOMAIN}
+      ADMIN_PASSWORD: ${GHOSTAPI_ADMIN_PASSWORD:?Set a strong GHOSTAPI_ADMIN_PASSWORD}
+      TRUST_PROXY: "1"
+      DATA_DIR: /app/data
+      TINYFISH_API_KEY: ${TINYFISH_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      PLANNER_MAX_COST_USD: ${PLANNER_MAX_COST_USD:-}
+      CYCLE_BUDGET_USD: ${CYCLE_BUDGET_USD:-1}
+    volumes:
+      - ghostapi-data:/app/data
+    expose:
+      - "3000"
+    security_opt:
+      - no-new-privileges:true
+  gateway:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    environment:
+      GHOSTAPI_DOMAIN: ${GHOSTAPI_DOMAIN:?Set GHOSTAPI_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      ghostapi:
+        condition: service_healthy
+volumes:
+  ghostapi-data:
+  caddy-data:
+  caddy-config:

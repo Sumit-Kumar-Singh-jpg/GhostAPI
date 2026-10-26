@@ -9,6 +9,9 @@ export function tinyfishReadiness() {
     configured: Boolean(process.env.TINYFISH_API_KEY),
     public_origin_configured: Boolean(process.env.PUBLIC_PORTAL_ORIGIN),
     available: false,
+    browser_available: Boolean(process.env.TINYFISH_API_KEY),
+    browser_mode:
+      'CDP remote browser with an enforced read-only local bridge; not autonomous Agent API',
     reason:
       'Blocked: managed-browser pre-action origin/write enforcement has not been demonstrated. The installed SDK exposes no verified origin allowlist. No remote agent call will be made.',
   };

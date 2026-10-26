@@ -71,6 +71,15 @@ export async function executeLocal(
     source = approvedUrl(workflow.allowed_origin, '/quote-data', input);
     raw = JSON.parse(await safeRead(source, workflow.allowed_origin, signal));
   }
+  return { id, observation: projectObservation(raw, workflow, id, source) };
+}
+
+export function projectObservation(
+  raw: Record<string, unknown>,
+  workflow: Workflow,
+  id: string,
+  source: URL,
+): Observation {
   // Fixed typed projection; page text never becomes an executable instruction.
   const fields = [
     'outcome',
@@ -98,12 +107,9 @@ export async function executeLocal(
     fields.filter((key) => key in raw).map((key) => [key, raw[key]]),
   );
   return {
-    id,
-    observation: {
-      ...observation,
-      source_url: source.toString(),
-      observed_at: new Date().toISOString(),
-      evidence_ids: [id],
-    } as Observation,
-  };
+    ...observation,
+    source_url: source.toString(),
+    observed_at: new Date().toISOString(),
+    evidence_ids: [id],
+  } as Observation;
 }

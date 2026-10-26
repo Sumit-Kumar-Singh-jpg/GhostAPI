@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: ghostapi
+    runtime: docker
+    repo: https://github.com/Sumit-Kumar-Singh-jpg/GhostAPI
+    branch: main
+    plan: free
+    region: virginia
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    autoDeployTrigger: checksPass
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: PORT
+        value: 10000
+      - key: DATA_DIR
+        value: /app/data
+      - key: TRUST_PROXY
+        value: 1
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: TINYFISH_API_KEY
+        sync: false

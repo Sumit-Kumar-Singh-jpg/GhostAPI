@@ -28,7 +28,7 @@ export const patchSchema = {
     candidate_version: { type: 'integer', minimum: 2 },
     rea_evidence_ids: {
       type: 'array',
-      minItems: 1,
+      minItems: 0,
       maxItems: 10,
       uniqueItems: true,
       items: { type: 'string', minLength: 1, maxLength: 100 },

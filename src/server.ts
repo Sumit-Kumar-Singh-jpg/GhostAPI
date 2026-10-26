@@ -9,6 +9,8 @@ import { createPortal } from './portal/app.js';
 import { tinyfishReadiness } from './integrations/tinyfish.js';
 import { applyPatch } from './domain/policy.js';
 import { validateObservation } from './domain/validator.js';
+import { installAccessControl, validateAccessOptions } from './security.js';
+import { aiPlannerProvider } from './integrations/planner.js';
 
 function listen(app: express.Express, port: number, host: string): Promise<Server> {
   return new Promise((resolve, reject) => {
@@ -17,19 +19,35 @@ function listen(app: express.Express, port: number, host: string): Promise<Serve
   });
 }
 export async function startRuntime(
-  options: { dashboardPort?: number; portalPort?: number; dataDir?: string; host?: string } = {},
+  options: {
+    dashboardPort?: number;
+    portalPort?: number;
+    dataDir?: string;
+    host?: string;
+    publicOrigin?: string;
+    adminPassword?: string;
+    production?: boolean;
+  } = {},
 ) {
   const host = options.host ?? process.env.HOST ?? '127.0.0.1';
-  // The control plane intentionally never binds publicly. Deploy the portal
-  // separately for remote execution; never expose release/reset APIs with it.
-  if (!['127.0.0.1', 'localhost', '::1'].includes(host))
+  const production = options.production ?? process.env.NODE_ENV === 'production';
+  const publicOrigin =
+    options.publicOrigin ?? (process.env.PUBLIC_ORIGIN || process.env.RENDER_EXTERNAL_URL);
+  const adminPassword = options.adminPassword ?? process.env.ADMIN_PASSWORD;
+  validateAccessOptions({ publicOrigin, password: adminPassword, production });
+  // Public control-plane access requires production authentication and HTTPS.
+  // The supplier remains loopback-only behind the read-only browser bridge.
+  if (
+    !['127.0.0.1', 'localhost', '::1'].includes(host) &&
+    !(production && publicOrigin && adminPassword)
+  )
     throw new Error('Dashboard control plane must bind loopback.');
   let store: Store | undefined;
   const portal = createPortal(() => store?.state.release ?? 'r1', '');
   const portalServer = await listen(
     portal,
     options.portalPort ?? Number(process.env.PORTAL_PORT ?? 3001),
-    host,
+    '127.0.0.1',
   );
   const portalAddress = portalServer.address();
   if (!portalAddress || typeof portalAddress === 'string')
@@ -49,9 +67,12 @@ export async function startRuntime(
   const service = new GhostService(store, portalOrigin);
   const app = express();
   app.disable('x-powered-by');
+  if (process.env.TRUST_PROXY === '1') app.set('trust proxy', 1);
+  app.get('/healthz', (_req, res) => res.json({ status: 'ok', service: 'ghostapi' }));
   app.use((req, res, next) => {
     const hostname = (req.headers.host ?? '').split(':')[0] ?? '';
-    if (!['127.0.0.1', 'localhost', '['].includes(hostname)) {
+    const publicHost = publicOrigin ? new URL(publicOrigin).host : undefined;
+    if (!['127.0.0.1', 'localhost', '['].includes(hostname) && req.headers.host !== publicHost) {
       res.status(403).json({ error: 'Untrusted Host' });
       return;
     }
@@ -66,7 +87,7 @@ export async function startRuntime(
       const origin = req.headers.origin;
       if (
         req.headers['x-ghostapi-client'] !== 'dashboard' ||
-        (origin && origin !== `http://${req.headers.host}`)
+        (origin && origin !== (publicOrigin ?? `http://${req.headers.host}`))
       ) {
         res.status(403).json({ error: 'Control request rejected: use the local dashboard.' });
         return;
@@ -75,6 +96,7 @@ export async function startRuntime(
     next();
   });
   app.use(express.json({ limit: '3mb' }));
+  installAccessControl(app, { publicOrigin, password: adminPassword, production });
   app.get('/api/state', (_req, res) => {
     const snapshot = structuredClone(service.state);
     if (snapshot.cycle && Date.now() >= snapshot.cycle.deadline) {
@@ -87,23 +109,26 @@ export async function startRuntime(
       busy: service.busy,
       portal_origin: portalOrigin,
       capabilities: {
-        executor: 'local-http',
+        executor: service.state.executor ?? 'local-http',
         tinyfish: tinyfishReadiness(),
         planner: {
-          configured: Boolean(
-            process.env.OPENAI_API_KEY &&
-            process.env.OPENAI_MODEL &&
-            Number(process.env.PLANNER_MAX_COST_USD) > 0,
-          ),
-          model: process.env.OPENAI_MODEL ?? null,
+          configured: Boolean(aiPlannerProvider()),
+          provider: aiPlannerProvider() ?? null,
+          model:
+            aiPlannerProvider() === 'openai'
+              ? process.env.OPENAI_MODEL
+              : aiPlannerProvider() === 'tinyfish-ai'
+                ? 'TinyFish provider-managed model'
+                : null,
         },
         rea: {
           package: 'rea-agents@6.7.0',
           mode: 'caller-supplied sanitized HAR; actual success recorded per evidence item',
         },
         ablation: {
-          status: 'not_run',
-          reason: 'No controlled LLM/TinyFish contribution comparison has been executed.',
+          status: service.state.evaluations?.at(-1)?.status ?? 'not_run',
+          latest: service.state.evaluations?.at(-1) ?? null,
+          reason: service.state.evaluations?.at(-1)?.summary ?? 'No comparison has been executed.',
         },
       },
     });
@@ -119,6 +144,11 @@ export async function startRuntime(
       }
     });
   action('/api/baseline', () => service.baseline());
+  action('/api/budget', (body) => service.setBudget(body.limit));
+  action('/api/executor', (body) =>
+    service.setExecutor(body.mode as 'local-http' | 'tinyfish-browser'),
+  );
+  action('/api/browser/reconcile', () => service.reconcileBrowsers());
   action('/api/release', (body) => service.switchRelease(body.release as 'r1' | 'r2'));
   action('/api/quote', (body) => service.quote(body));
   action('/api/inspect', (body) => service.inspect(body.har));
@@ -128,6 +158,7 @@ export async function startRuntime(
   action('/api/rollback', () => service.rollback());
   action('/api/reset', () => service.reset());
   action('/api/demo', (body) => service.demo(body.use_llm === true));
+  action('/api/evaluate', (body) => service.evaluate(body.use_llm === true));
   action('/api/reject-bad-patch', async () => {
     const before = service.state.active_version;
     let rejected = false;
@@ -188,10 +219,10 @@ export async function startRuntime(
   app.get('/api/export', (_req, res) => {
     res.attachment(`ghostapi-audit-${Date.now()}.json`).json({
       exported_at: new Date().toISOString(),
-      execution_mode: 'local-http',
+      execution_mode: service.state.executor ?? 'local-http',
       state: service.state,
       tinyfish: tinyfishReadiness(),
-      ablation: 'not_run',
+      ablation: service.state.evaluations?.at(-1) ?? 'not_run',
     });
   });
   app.use(express.static(resolve('public')));
@@ -232,7 +263,7 @@ export async function startRuntime(
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const runtime = await startRuntime();
   console.log(
-    `GhostAPI dashboard: ${runtime.url}\nRead-only supplier: ${runtime.portalOrigin}\nMode: local HTTP replay. TinyFish remote execution is blocked pending an enforced execution boundary.`,
+    `GhostAPI dashboard: ${runtime.url}\nRead-only supplier: ${runtime.portalOrigin}\nExecution engine is selected by the authenticated operator.`,
   );
   for (const signal of ['SIGINT', 'SIGTERM'] as const)
     process.once(signal, () => void runtime.close().then(() => process.exit(0)));

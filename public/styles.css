@@ -19,6 +19,42 @@
     sans-serif;
   font-size: 14px;
 }
+.wide-select {
+  width: 100%;
+  margin-bottom: 18px;
+}
+.login-form {
+  padding: 32px;
+  max-width: 470px;
+}
+.login-form h2 {
+  font-size: 25px;
+  letter-spacing: -0.6px;
+  margin: 16px 0;
+}
+.login-form input {
+  width: 100%;
+  margin: 5px 0 20px;
+}
+.comparison-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.comparison-arm {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 15px;
+  min-width: 0;
+}
+@media (max-width: 700px) {
+  .nav-item {
+    gap: 0;
+  }
+  .comparison-grid {
+    grid-template-columns: 1fr;
+  }
+}
 * {
   box-sizing: border-box;
 }
@@ -1174,6 +1210,7 @@ footer {
   }
   .nav-item {
     width: auto;
+    gap: 0;
     padding: 9px;
     margin: 0;
     font-size: 0;

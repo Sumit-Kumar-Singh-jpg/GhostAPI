@@ -34,7 +34,11 @@
         ><button class="nav-item" data-tab="versions" aria-label="Workflow versions">
           <span>⑂</span> Workflow versions
         </button>
+        <button class="nav-item" data-tab="evaluation" aria-label="REA comparison">
+          <span>⇄</span> REA comparison
+        </button>
       </nav>
+
       <div class="sidebar-bottom">
         <div class="sandbox-note">
           <span class="dot green"></span> Local sandbox<small
@@ -56,7 +60,8 @@
         <div class="topbar-right">
           <span class="keycap">LOCAL</span><span class="header-divider"></span
           ><span class="dot green"></span><span>System online</span
-          ><span class="avatar small">D</span>
+          ><span class="avatar small">D</span
+          ><button id="logout-button" class="text-button" hidden>Sign out</button>
         </div>
       </header>
       <main>
@@ -207,6 +212,24 @@
                   <span class="pill subdued">ISOLATED</span>
                 </div>
                 <div class="control-body">
+                  <label class="field-label" for="execution-mode">Execution engine</label>
+                  <select id="execution-mode" class="wide-select">
+                    <option value="local-http">Local HTTP replay</option>
+                    <option value="tinyfish-browser">TinyFish remote browser</option>
+                  </select>
+                  <button id="reconcile-button" class="button subtle wide" hidden>
+                    Reconcile browser cleanup
+                  </button>
+                  <label class="field-label" for="budget-limit">Cycle reservation cap (USD)</label>
+                  <select id="budget-limit" class="wide-select">
+                    <option value="1">$1 · HTTP / browser replay</option>
+                    <option value="3">$3 · Includes one AI proposal</option>
+                    <option value="6">$6 · Paired AI comparison</option>
+                    <option value="10">$10 · Custom reserve</option>
+                  </select>
+                  <p id="planner-budget-note" class="muted">
+                    A reservation is an upper bound, not an actual charge.
+                  </p>
                   <label class="field-label">Site release</label>
                   <div class="release-switch">
                     <button data-release="r1" class="release-button active">
@@ -242,8 +265,13 @@
                     ><button id="bad-patch-button" class="button subtle">Test bad patch</button>
                   </div>
                   <label class="checkbox-label"
-                    ><input type="checkbox" id="use-llm" /> Use configured LLM planner</label
+                    ><input type="checkbox" id="use-llm" /> Use AI repair planner</label
                   >
+                  <div class="upload-row">
+                    <button id="evaluate-button" class="button subtle">
+                      Compare with / without REA
+                    </button>
+                  </div>
                   <div class="upload-row">
                     <label for="har-file" class="upload-label">↑ Import operator HAR</label
                     ><input
@@ -289,6 +317,16 @@
           </div>
           <div id="versions-list"></div>
         </section>
+        <section id="evaluation-tab" class="tab-panel panel" hidden>
+          <div class="panel-heading">
+            <strong>REA comparison</strong><span class="pill subdued">PAIRED VERIFICATION</span>
+          </div>
+          <div id="evaluation-list" class="card-list">
+            <p class="muted">
+              Collect fresh REA evidence, then compare candidates with and without it.
+            </p>
+          </div>
+        </section>
         <footer>
           <span
             >GHOSTAPI <span class="footer-separator">/</span> BUILT FOR TRUST, NOT JUST
@@ -304,6 +342,22 @@
         ><button id="close-dialog" class="button secondary" aria-label="Close details">×</button>
       </div>
       <pre id="detail-content"></pre>
+    </dialog>
+    <dialog id="login-dialog" aria-labelledby="login-title">
+      <form id="login-form" class="login-form">
+        <span class="eyebrow">GHOSTAPI WORKSPACE</span>
+        <h2 id="login-title">Sign in to your workspace.</h2>
+        <p class="muted">Administrator access is required to run workflows and view evidence.</p>
+        <label for="admin-password" class="field-label">Administrator password</label
+        ><input
+          id="admin-password"
+          type="password"
+          autocomplete="current-password"
+          required
+          maxlength="256"
+        /><button type="submit" class="button primary wide">Sign in</button>
+        <p id="login-error" class="muted" role="alert"></p>
+      </form>
     </dialog>
   </body>
 </html>

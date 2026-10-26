@@ -31,6 +31,10 @@ function toast(message, error = false) {
 async function refresh() {
   try {
     const response = await fetch('/api/state');
+    if (response.status === 401) {
+      showLogin();
+      return;
+    }
     if (!response.ok) throw new Error('Dashboard disconnected');
     snapshot = await response.json();
     render();
@@ -38,6 +42,17 @@ async function refresh() {
     $('integration-status').textContent =
       'Dashboard connection unavailable. Refresh when the server is back.';
   }
+}
+function showLogin() {
+  snapshot = undefined;
+  const dialog = $('login-dialog');
+  if (!dialog.open) dialog.showModal();
+}
+async function sessionStatus() {
+  const session = await (await fetch('/api/session')).json();
+  $('logout-button').hidden = !session.protected;
+  if (!session.authenticated) showLogin();
+  return session.authenticated;
 }
 async function action(path, body = {}, message = 'Operation completed') {
   if (pending) return;
@@ -70,6 +85,20 @@ function render() {
   const { state: s, capabilities } = snapshot,
     busy = pending || snapshot.busy;
   const latest = s.candidates.at(-1);
+  const remote = capabilities.executor === 'tinyfish-browser';
+  $('budget-limit').value = String(s.budget_limit_usd ?? 1);
+  $('budget-limit').disabled = busy || s.outstanding.length > 0;
+  $('planner-budget-note').textContent =
+    capabilities.planner.provider === 'tinyfish-ai'
+      ? 'TinyFish AI reserves the provider default ceiling of 150 steps. Select $3 for one proposal or $6 for comparison. Actual usage may be lower.'
+      : 'A reservation is an upper bound, not an actual charge.';
+  $('execution-mode').value = capabilities.executor;
+  $('execution-mode').disabled = busy || s.outstanding.length > 0;
+  $('execution-mode').querySelector('[value="tinyfish-browser"]').disabled =
+    !capabilities.tinyfish.browser_available;
+  $('mode-banner').innerHTML =
+    `<span class="mode-symbol">◎</span><div><strong>${remote ? 'TinyFish remote browser' : 'Local HTTP replay'}</strong><span>${remote ? 'Restricted local HTTP bridge · JavaScript and service workers disabled · Not autonomous Agent API' : 'Real requests to your supplier sandbox · Rules fallback by default · No remote browser run implied'}</span></div><span class="pill">${remote ? 'REMOTE BROWSER' : 'DEVELOPMENT'}</span>`;
+  $('reconcile-button').hidden = s.outstanding.length === 0;
   const valid = s.runs.filter((r) => r.result && r.checks.every((c) => c.pass)).length;
   const healthColor =
     s.health === 'Healthy'
@@ -102,7 +131,7 @@ function render() {
     `<span class="dot ${healthColor}"></span> ${esc(s.health === 'NotEnrolled' ? 'Not enrolled' : s.health)}`;
   $('portal-link').href = `${snapshot.portal_origin}/${s.release === 'r1' ? 'catalog' : 'quotes'}`;
   $('cycle-status').textContent = s.cycle
-    ? `${s.cycle.runs} / 15 local runs · ${Math.max(0, Math.ceil((s.cycle.deadline - Date.now()) / 1000))}s remaining`
+    ? `${s.cycle.runs} / 15 runs · ${Math.max(0, Math.ceil((s.cycle.deadline - Date.now()) / 1000))}s remaining`
     : 'No active evidence cycle';
   document.querySelectorAll('[data-release]').forEach((button) => {
     button.classList.toggle('active', button.dataset.release === s.release);
@@ -168,7 +197,7 @@ function render() {
     $('quote-result').innerHTML =
       q.outcome === 'unavailable'
         ? `<div class="quote-sku">${esc(q.sku)} · QTY ${q.quantity}</div><h2>No current quote</h2><p class="muted">Explicitly unavailable. No price or tax invented.</p>`
-        : `<div class="quote-sku">${esc(q.sku)} <span> / QTY ${q.quantity}</span></div><div class="quote-price">${money(q.verified_total_paise)}</div><div class="quote-caption">Verified final total · ${esc(q.currency)}</div><div class="quote-breakdown"><span>Observed unit price</span><span>${money(q.displayed_price_paise)}</span></div>${q.tax_amount_paise !== undefined ? `<div class="quote-breakdown"><span>Demo tax</span><span>${money(q.tax_amount_paise)}</span></div>` : ''}<div class="quote-breakdown"><span>Delivery</span><span>${money(q.delivery_fee_paise)}</span></div><div class="quote-breakdown total"><span>Exact-match check</span><span>✓ zero tolerance</span></div><div class="quote-provenance">wf${q.workflow_version} / ${esc(q.site_release)} · LOCAL HTTP<br>${esc(q.quote_id)}<br>Verified ${stamp(q.verification_time)}</div>`;
+        : `<div class="quote-sku">${esc(q.sku)} <span> / QTY ${q.quantity}</span></div><div class="quote-price">${money(q.verified_total_paise)}</div><div class="quote-caption">Verified final total · ${esc(q.currency)}</div><div class="quote-breakdown"><span>Observed unit price</span><span>${money(q.displayed_price_paise)}</span></div>${q.tax_amount_paise !== undefined ? `<div class="quote-breakdown"><span>Demo tax</span><span>${money(q.tax_amount_paise)}</span></div>` : ''}<div class="quote-breakdown"><span>Delivery</span><span>${money(q.delivery_fee_paise)}</span></div><div class="quote-breakdown total"><span>Exact-match check</span><span>✓ zero tolerance</span></div><div class="quote-provenance">wf${q.workflow_version} / ${esc(q.site_release)} · ${esc(s.runs.find((r) => q.evidence_ids.includes(r.id))?.executor ?? capabilities.executor)}<br>${esc(q.quote_id)}<br>Verified ${stamp(q.verification_time)}</div>`;
   } else {
     $('quote-badge').textContent = s.runs.length ? 'WITHHELD' : 'AWAITING RUN';
     $('quote-badge').className = `pill ${s.runs.length ? 'warning' : 'subdued'}`;
@@ -180,7 +209,7 @@ function render() {
         .toReversed()
         .map(
           (r) =>
-            `<tr><td class="mono">${esc(r.id.slice(0, 17))}<br><span class="muted">local-http</span></td><td>${esc(r.input.sku)} × ${r.input.quantity}</td><td>wf${r.workflow_version} / ${esc(r.release)}</td><td>${esc(r.status)}</td><td><span class="pill ${r.result ? 'success' : 'warning'}">${r.result ? 'VALIDATED' : 'WITHHELD'}</span></td><td><button class="button secondary" data-run="${esc(r.id)}">Details ↗</button></td></tr>`,
+            `<tr><td class="mono">${esc(r.id.slice(0, 17))}<br><span class="muted">${esc(r.executor)}</span></td><td>${esc(r.input.sku)} × ${r.input.quantity}</td><td>wf${r.workflow_version} / ${esc(r.release)}</td><td>${esc(r.status)}</td><td><span class="pill ${r.result ? 'success' : 'warning'}">${r.result ? 'VALIDATED' : 'WITHHELD'}</span></td><td><button class="button secondary" data-run="${esc(r.id)}">Details ↗</button></td></tr>`,
         )
         .join('')}</tbody></table>`
     : '<div class="diff-empty">No execution attempts yet.</div>';
@@ -213,23 +242,80 @@ function render() {
     latest.tests.length !== 3 ||
     !latest.tests.every((r) => r.result);
   $('rollback-button').disabled = busy || s.activation_history.length < 2;
-  $('run-demo').innerHTML = busy ? '<span>◌</span> Working…' : '<span>▶</span> Run local demo';
+  $('run-demo').innerHTML = busy
+    ? '<span>◌</span> Working…'
+    : `<span>▶</span> ${remote ? 'Run remote demo' : 'Run local demo'}`;
   $('use-llm').disabled = busy || !capabilities.planner.configured;
   $('use-llm').title = capabilities.planner.configured
     ? 'Configured LLM planner; calls reserve configured cost bound'
-    : 'Configure OPENAI_API_KEY, OPENAI_MODEL and PLANNER_MAX_COST_USD server-side';
+    : 'Configure a TinyFish key or an OpenAI key/model and charge bound server-side';
   const actualRea = s.evidence.some((e) => e.kind === 'rea-har');
   $('integration-status').textContent =
-    `TinyFish remote: blocked pending pre-action enforcement${capabilities.tinyfish.configured ? ' (key configured)' : ''}. REA: ${actualRea ? 'supplied HAR inspection succeeded' : 'no successful inspection yet'}. LLM: ${capabilities.planner.configured ? 'configured' : 'not configured; rules fallback'}. Ablation: not run.`;
+    `TinyFish Browser: ${capabilities.tinyfish.browser_available ? 'available through restricted CDP bridge' : 'credential required'}. Agent API: unavailable. REA: ${actualRea ? 'capture inspected' : 'no successful inspection yet'}. LLM: ${capabilities.planner.configured ? 'configured' : 'credential/model required; rules fallback'}. Comparison: ${capabilities.ablation.status}.`;
+  $('evaluate-button').disabled =
+    busy || !s.evidence.some((e) => e.kind === 'rea-har' && e.release === s.release);
+  $('evaluation-list').innerHTML = s.evaluations?.length
+    ? s.evaluations
+        .toReversed()
+        .map(
+          (e) =>
+            `<article class="evidence-card"><h3>${esc(e.status.toUpperCase())} · ${esc(e.planner)}</h3><p>${esc(e.summary)}</p><div class="comparison-grid">${e.branches.map((b) => `<div class="comparison-arm"><span class="pill ${b.status === 'passed' ? 'success' : 'warning'}">${esc(b.arm)} · ${esc(b.status)}</span><p>${b.runs.length} replay cases · $${b.reserved_usd.toFixed(3)} reserved<br>${esc(b.context_sha256.slice(0, 20))}…</p>${b.error ? `<p>${esc(b.error)}</p>` : ''}</div>`).join('')}</div><p>Active version unchanged: ${e.active_version_unchanged ? 'yes' : 'NO'} · ${esc(e.executor)} · ${stamp(e.completed_at)}</p></article>`,
+        )
+        .join('')
+    : '<p class="muted">No comparison yet. Collect fresh REA evidence, then compare both contexts under equal offered budgets.</p>';
 }
 
 $('run-demo').onclick = () =>
   action(
     'demo',
     { use_llm: $('use-llm').checked },
-    'Local demo completed. Inspect the timeline for actual gate results.',
+    'Demo finished. Inspect the timeline for actual execution and verification results.',
   );
 $('baseline-button').onclick = () => action('baseline', {}, 'Baseline replay recorded.');
+$('budget-limit').onchange = () =>
+  action(
+    'budget',
+    { limit: Number($('budget-limit').value) },
+    'Reservation cap selected. Start a fresh demo.',
+  );
+$('execution-mode').onchange = () =>
+  action(
+    'executor',
+    { mode: $('execution-mode').value },
+    'Execution mode selected. Start a fresh baseline or demo.',
+  );
+$('reconcile-button').onclick = () =>
+  action('browser/reconcile', {}, 'Browser cleanup reconciliation finished.');
+$('evaluate-button').onclick = () =>
+  action(
+    'evaluate',
+    { use_llm: $('use-llm').checked },
+    'Comparison recorded. Open REA comparison to inspect both outcomes.',
+  );
+$('login-dialog').addEventListener('cancel', (event) => event.preventDefault());
+$('login-form').onsubmit = async (event) => {
+  event.preventDefault();
+  $('login-error').textContent = '';
+  const password = $('admin-password').value;
+  $('admin-password').value = '';
+  const response = await fetch('/api/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-GhostAPI-Client': 'dashboard' },
+    body: JSON.stringify({ password }),
+  });
+  const result = await response.json();
+  if (!response.ok) {
+    $('login-error').textContent = result.error;
+    return;
+  }
+  $('login-dialog').close();
+  await sessionStatus();
+  await refresh();
+};
+$('logout-button').onclick = async () => {
+  await fetch('/api/logout', { method: 'POST', headers: { 'X-GhostAPI-Client': 'dashboard' } });
+  showLogin();
+};
 $('quote-button').onclick = () =>
   action(
     'quote',
@@ -297,6 +383,7 @@ document.querySelectorAll('[data-tab]').forEach(
         runs: 'Run history',
         evidence: 'Evidence',
         versions: 'Workflow versions',
+        evaluation: 'REA comparison',
       };
       $('breadcrumb-name').textContent = names[button.dataset.tab];
     }),
@@ -311,12 +398,14 @@ document.addEventListener('click', (event) => {
     : (s.runs.find((r) => r.id === id) ??
       s.evidence.find((e) => e.id === id) ??
       s.candidates.find((c) => c.id === id) ??
-      s.cycle);
+      s.evaluations?.find((e) => e.id === id) ??
+      s.candidates.find((c) => c.planner_receipt?.run_id === id)?.planner_receipt ??
+      (s.cycle?.id === id ? s.cycle : undefined));
   showDetails('Execution & provenance', item ?? { reference: id });
 });
 $('close-dialog').onclick = () => $('detail-dialog').close();
 $('detail-dialog').addEventListener('click', (event) => {
   if (event.target === $('detail-dialog')) $('detail-dialog').close();
 });
-await refresh();
+if (await sessionStatus()) await refresh();
 setInterval(refresh, 1200);

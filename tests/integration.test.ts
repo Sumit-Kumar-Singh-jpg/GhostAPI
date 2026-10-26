@@ -290,6 +290,26 @@ test('Concurrent mutations are rejected rather than racing activation state', as
   assert.equal(runtime.service.busy, false);
 });
 
+test('Paired rules comparison replays real cases, reports scope and never activates a candidate', async (t) => {
+  const runtime = await setup();
+  t.after(() => runtime.close());
+  const s = runtime.service;
+  await s.exclusive(() => s.demo());
+  const version = s.state.active_version,
+    cycle = s.state.cycle?.id;
+  const result = await s.exclusive(() => s.evaluate());
+  assert.equal(result.status, 'completed');
+  assert.equal(result.contribution, 'rules_only');
+  assert.equal(result.active_version_unchanged, true);
+  assert.equal(result.branches[0]?.status, 'passed');
+  assert.equal(result.branches[0]?.runs.length, 3);
+  assert.equal(result.branches[1]?.status, 'abstained');
+  assert.notEqual(result.branches[0]?.context_sha256, result.branches[1]?.context_sha256);
+  assert.equal(s.state.active_version, version);
+  assert.equal(s.state.cycle?.id, cycle);
+  assert.equal(s.state.evaluations?.length, 1);
+});
+
 test('Failed final replay automatically revalidates the previous compatible version within budget', async (t) => {
   const runtime = await setup();
   t.after(() => runtime.close());

@@ -71,7 +71,7 @@ export type Evidence = {
 };
 export type Run = {
   id: string;
-  executor: 'local-http' | 'tinyfish';
+  executor: 'local-http' | 'tinyfish' | 'tinyfish-browser';
   status: 'COMPLETED' | 'FAILED';
   started_at: string;
   completed_at: string;
@@ -82,6 +82,7 @@ export type Run = {
   checks: Check[];
   result?: Verified;
   error?: string;
+  evaluation_id?: string;
 };
 export type TimelineEvent = {
   id: string;
@@ -96,7 +97,8 @@ export type Candidate = {
   state: CandidateState;
   workflow: Workflow;
   patch: Patch;
-  planner: 'rules fallback' | 'openai';
+  planner: 'rules fallback' | 'openai' | 'tinyfish-ai';
+  planner_receipt?: { run_id: string; steps: number | null; provider: 'tinyfish' };
   evidence_ids: string[];
   tests: Run[];
   checks: Check[];
@@ -128,4 +130,7 @@ export type State = {
   published?: Verified;
   cycle?: Cycle;
   outstanding: string[];
+  executor?: 'local-http' | 'tinyfish-browser';
+  evaluations?: import('../evaluation.js').Evaluation[];
+  budget_limit_usd?: number;
 };

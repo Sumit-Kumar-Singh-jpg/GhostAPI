@@ -1,86 +1,58 @@
 # GhostAPI
 
-An evidence-based repair and verification sandbox for read-only website workflows.
+GhostAPI repairs a saved read-only website workflow when its source changes, and publishes a quotation only after independent verification. The demo supplier switches from tax-inclusive prices to prices before tax; the app detects the mismatch, inspects evidence with REA, proposes a bounded configuration patch, tests it, then activates it provisionally and performs a final replay.
 
-The local MVP is implemented: a supplier portal changes from inclusive to exclusive pricing; GhostAPI withholds the old workflow's result, inspects captured evidence with REA, proposes a bounded configuration change, replays independent cases, and publishes only after validation. The dashboard exposes the observations, failed checks, version diff, source hashes, and rollback outcome.
+## Run
 
-**Execution modes are explicit.** The working default reads real local HTTP responses and uses a labeled rules fallback. It is not a TinyFish browser demonstration or an autonomous LLM repair claim. REA is actually invoked against a sanitized supplied HAR; its normalized findings feed the planner. An optional OpenAI structured-output planner is implemented but requires a model, key, and configured charge bound. Remote TinyFish runs remain blocked until the required pre-action execution restriction is implemented and demonstrated.
+Requires Node.js 24 and npm. Run `npm ci`, then `npm start`, and open http://127.0.0.1:3000. The supplier runs separately on loopback port 3001. Click **Run local demo** for the complete deterministic presentation. MOTOR-01 × 1 verifies to ₹1,180. All supplier prices and tax rates are synthetic.
 
-## Run locally
+## Execution and repair modes
 
-Requires Node.js 24.11 or newer in the Node 24 line (the pinned REA package also supports its documented Node 22/26 versions). Chrome is used by browser tests.
+- **Local HTTP** is the default, with real GET responses and a labeled rules fallback. No provider charges are incurred by this mode with AI disabled.
+- **TinyFish Browser** creates actual remote Chrome sessions, controlled through Playwright CDP. A fresh context blocks scripts, service workers, WebSockets, writes, off-origin requests, and unenrolled routes before forwarding approved reads through a local bridge. It reads the real supplier DOM. This is controlled remote browser execution; autonomous Agent website navigation remains unavailable.
+- **AI repair planner** uses TinyFish Agent as an isolated JSON reasoning task on about:blank, or OpenAI when its key, explicit model and charge bound are configured. It receives typed observations and a fixed patch catalog, never the independent acceptance oracle. All generated patches pass strict local policy validation.
+- **REA comparison** creates separate with/without-REA planner contexts with equal offered budgets and three independent replay cases per arm. It does not activate either candidate. Protocol completion, recovery success, and evidence contribution are reported separately.
 
-```powershell
-npm ci
-npm start
-```
+Set keys in an ignored `.env` or hosting secrets, never in frontend code. Enable AI explicitly in the dashboard. The UI exposes executor identities, planner receipts, source evidence, failed checks, workflow differences, audit export and compatible/incompatible rollback.
 
-Open [the dashboard](http://127.0.0.1:3000) and [the read-only supplier portal](http://127.0.0.1:3001).
+## Budget and provider lifecycle
 
-Click **Run local demo**. It archives the previous sandbox state and executes:
+Reservations are conservative upper bounds, not measured bills. TinyFish Browser reads the wallet meter before execution. TinyFish AI reserves the default 150-step ceiling because this account does not support custom step limits; at the verified $0.016/step rate this reserves $2.40 per proposal. Select a $3 cycle cap for one AI proposal or $6 for paired comparison. Actual usage can be lower. Rates are read from the provider rather than assumed.
 
-1. wf1 baseline on r1: MOTOR-01, quantity 1, ₹1,180 inclusive.
-2. Operator-controlled switch to r2: ₹1,000 before tax.
-3. wf1 replay withheld for changed basis/missing fields.
-4. Real local HTTP response captured as HAR; pinned REA CLI inspects the sanitized artifact.
-5. Labeled rules fallback proposes wf2 from observed fields and the fixed patch catalog.
-6. MOTOR-01 × 1, SENSOR-01 × 3, and allowed-but-unavailable UNAVAILABLE-01 × 1 replay against independent expectations.
-7. Provisional activation, final replay, and verified ₹1,180 publication.
+Remote browser sessions are explicitly deleted. Queued AI tasks are tracked until terminal and cancelled on interruption. Unresolved provider cleanup blocks further paid execution; use the reconciliation control. Do not blindly repeat a run after an uncertain creation response.
 
-You can also advance manually with the operator controls. **Restore previous active version** on r2 returns to wf1 and remains Degraded, because restoring a saved config does not restore compatibility. Switch to r1 and replay wf1 to demonstrate its compatible behavior. **Test bad patch** demonstrates rejection before execution.
+## Configuration
 
-All prices and tax rates are synthetic. The fixture has no checkout, user accounts, or write handlers. Its release control exists only in the loopback dashboard, not in the portal.
+See `.env.example`. Important settings:
 
-## Optional configuration
-
-Copy `.env.example` to `.env` and set values locally; do not put keys in frontend code or share the file. The app does not make an LLM request unless the operator explicitly chooses the configured LLM planner.
-
-| Setting | Meaning |
+| Variable | Purpose |
 | --- | --- |
-| `PORT`, `PORTAL_PORT` | Defaults 3000 and 3001 |
-| `DATA_DIR` | Private JSON state, archived runs, sanitized HAR and REA receipts; ignored by Git |
-| `CYCLE_BUDGET_USD` | Reservation ceiling; default 1 USD; not a measured cycle price |
-| `OPENAI_API_KEY`, `OPENAI_MODEL` | Explicit planner credentials and model; no model is silently selected |
-| `PLANNER_MAX_COST_USD` | Verified conservative upper bound per planner call; required before an LLM request |
-| `TINYFISH_API_KEY`, `PUBLIC_PORTAL_ORIGIN` | Provider preparation only; setting them does not bypass the execution-boundary blocker |
+| PORT / PORTAL_PORT | Dashboard and loopback supplier ports; defaults 3000 / 3001 |
+| DATA_DIR | Durable JSON state, evidence, archives and REA artifacts |
+| TINYFISH_API_KEY | Remote browser and AI planner access |
+| OPENAI_API_KEY / OPENAI_MODEL / PLANNER_MAX_COST_USD | Optional explicit OpenAI planner and per-call reservation |
+| ADMIN_PASSWORD | Required in production, at least 16 characters |
+| PUBLIC_ORIGIN | Canonical HTTPS deployment origin; Render automatically supplies RENDER_EXTERNAL_URL as fallback |
+| HOST | Loopback locally; 0.0.0.0 permitted only with production authentication |
+| TRUST_PROXY | Set 1 behind the Render proxy |
 
-The optional planner uses the [official Responses structured-output API](https://developers.openai.com/api/docs/guides/structured-outputs). Provider output still passes the local immutable-policy validator. No remote planner call has been validated by the keyless test suite. Charge reservations are conservative configured bounds, not provider-reported actual billing; do not claim a hard billing guarantee without a verified upper bound.
+Production uses administrator sign-in, an HttpOnly Secure SameSite cookie, sign-out revocation, sign-in throttling, host/origin checks and security headers. Sessions expire after eight hours and are cleared on restart. This is a single-operator demonstration, not a multi-tenant service.
 
-### Operator HAR import
+## Render deployment
 
-Start a baseline/evidence cycle. In the separate local browser, request the portal's quote JSON for one input, then export a HAR with response content. Use **Import operator HAR**. Only fresh same-origin GET quote JSON for the current release/input is retained. Cookies, headers, unrelated entries, and unknown body fields are removed before REA ingestion. A stale capture, missing body, or mismatched release is rejected. The convenience **Inspect** button creates a real HTTP HAR itself; the UI labels it as local HTTP capture, not operator browser export.
+`render.yaml` defines one Docker web service in Virginia (the existing account region), ephemeral state at `/app/data`, `/healthz`, and automatic deployment after CI checks pass. The selected free plan has no persistent disk: state and audit history reset on restart or deployment, and idle services can cold start. TinyFish provider calls are billed separately.
 
-### Separate supplier deployment
+Push the configuration to the private GitHub repository, open the Render Blueprint creation flow, grant repository access if prompted, and supply ADMIN_PASSWORD and TINYFISH_API_KEY as secret environment variables. Review the free service before applying. Public hosting is complete only after Render reports the deploy live and HTTPS, authentication, a complete workflow, and the workflow have been checked.
 
-```powershell
-npm run portal
-```
+`Dockerfile` runs the built Node application. `compose.yaml` additionally provides a Caddy HTTPS gateway for self-hosting. Do not expose the loopback supplier or bypass administrator authentication.
 
-This starts only the read-only fixture. `SITE_RELEASE=r1` or `r2` selects the release at process start. `PORTAL_HOST=0.0.0.0` binds that standalone portal for an explicitly configured hosting environment. Keep the dashboard loopback-only. Hosting and public reachability have not been verified here. Public deployment does not itself satisfy the TinyFish execution-boundary gate.
+## Verification
 
-## Verify
+Run `npm run check`, `npm run build`, `npm run test:e2e`, `npm run format:check`, and `npm audit`. Browser tests use local Chrome, or bundled Chromium in CI (`npx playwright install --with-deps chromium`). CI runs the same checks. No paid provider calls occur in these tests.
 
-```powershell
-npm run check
-npm run test:e2e
-npm run build
-npm run format:check
-npm audit
-```
+Opt-in live checks: `npm run smoke:remote:full -- --ai --compare`. This spends provider credits and writes an ignored receipt to `artifacts/remote-smoke.json`. The verified live run completed with TinyFish AI, 12 remote browser runs, real REA inspection, a Healthy workflow and zero outstanding sessions. Both comparison candidates passed, so recovery without REA was sufficient in this run. No causal REA improvement is claimed. TinyFish does not expose its underlying planner model version.
 
-`npm run check` includes TypeScript and meaningful domain/integration tests. Integration tests start real isolated HTTP servers, use independent expected quotation values, and execute the pinned REA CLI on actual captured responses. They exercise bad-tax rejection, input/policy restrictions, transient retry, rollback compatibility, deadline expiry after provisional activation, persistence recovery, and API isolation. Browser tests use installed Google Chrome for the complete dashboard flow and a 390px mobile viewport. To use bundled Chromium instead, install it with Playwright and remove `channel: 'chrome'` in the Playwright config.
+See `docs/implementation.md` for architecture and limits. The project repairs its enrolled synthetic supplier workflow, not arbitrary websites. Formal PRD document-validator approval and event-rule acceptance remain separate from runtime verification.
 
-Desktop/mobile screenshots are generated under ignored `artifacts/`; failure traces are under ignored `test-results/`. Neither location should contain real credentials or customer data.
+`rea-agents` is pinned to 6.7.0, with its Zod dependency overridden to 4.6.7 for GHSA-mrhx-c7xc-m3w5. Real REA capture tests verify compatibility. Use `npm ci` with the lockfile.
 
-## Implementation boundaries
-
-- **No remote execution claim:** the installed TinyFish Agent SDK does not establish a pre-action origin/write restriction. The server returns an explicit blocker before any remote run. There is no `safe=true` configuration shortcut. See [the TinyFish integration](src/integrations/tinyfish.ts).
-- **No contribution claim:** controlled LLM/TinyFish ablation has not run. Real REA parsing and a successful rules-fallback demonstration do not establish causal AI improvement.
-- **No production approval claim:** this is a loopback developer sandbox, with no production authentication, multi-user access, or arbitrary-origin enrollment.
-- **No PRD compliance certificate:** the authoritative `trace_lint.py` and its schema references remain unavailable. Runtime tests do not replace that document validator.
-
-See [implementation decisions](docs/implementation.md) for module boundaries, requirement coverage, the two revision-4 clarifications, and remaining integration work.
-
-## Dependency note
-
-`rea-agents` is pinned to 6.7.0. Its Zod dependency is overridden to 4.6.7 to address [GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5). Real REA capture tests verify compatibility with that override. `package-lock.json` pins the resolved dependency tree; use `npm ci` for reproducible installs.

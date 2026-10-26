@@ -11,6 +11,7 @@ RUN npm run build && npm prune --omit=dev --no-audit
 
 FROM node:24.15.0-bookworm-slim
 WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends procps ca-certificates && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000 PORTAL_PORT=3001 DATA_DIR=/app/data
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist/src ./dist/src

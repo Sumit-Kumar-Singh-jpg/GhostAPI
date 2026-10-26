@@ -21,3 +21,20 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
       - run: npm audit --audit-level=high
+      - name: Verify production container and real REA on free-plan resources
+        run: |
+          docker build -t ghostapi:ci .
+          docker run --rm --cpus 0.1 --memory 512m \
+            -e ADMIN_PASSWORD=ci-container-password-fixture \
+            -e RENDER_EXTERNAL_URL=https://ghostapi-ci.invalid \
+            ghostapi:ci node --input-type=module -e '
+              import { startRuntime } from "./dist/src/server.js";
+              const runtime = await startRuntime({ dashboardPort: 0, portalPort: 0 });
+              try {
+                await runtime.service.demo();
+                const state = runtime.service.state;
+                if (state.health !== "Healthy" || state.published?.verified_total_paise !== 118000 ||
+                    !state.events.some(event => event.title === "REA inspected supplied HAR"))
+                  throw new Error("Production recovery or real REA inspection failed");
+              } finally { await runtime.close(); }
+            '

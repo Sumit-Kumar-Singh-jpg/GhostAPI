@@ -1,3 +1,4 @@
+import { initWebsites, renderWebsites } from './websites.js';
 const $ = (id) => document.getElementById(id);
 const esc = (value) =>
   String(value ?? '').replace(
@@ -82,6 +83,7 @@ function showDetails(title, value) {
 }
 function render() {
   if (!snapshot) return;
+  renderWebsites(snapshot.websites ?? [], snapshot.website_monitoring);
   const { state: s, capabilities } = snapshot,
     busy = pending || snapshot.busy;
   const latest = s.candidates.at(-1);
@@ -380,13 +382,15 @@ document.querySelectorAll('[data-tab]').forEach(
         .querySelectorAll('.tab-panel')
         .forEach((el) => (el.hidden = el.id !== `${button.dataset.tab}-tab`));
       const names = {
-        overview: 'Overview',
+        websites: 'Websites',
+        overview: 'Demo overview',
         runs: 'Run history',
         evidence: 'Evidence',
         versions: 'Workflow versions',
         evaluation: 'REA comparison',
       };
       $('breadcrumb-name').textContent = names[button.dataset.tab];
+      $('demo-intro').hidden = button.dataset.tab === 'websites';
     }),
 );
 document.addEventListener('click', (event) => {
@@ -408,5 +412,7 @@ $('close-dialog').onclick = () => $('detail-dialog').close();
 $('detail-dialog').addEventListener('click', (event) => {
   if (event.target === $('detail-dialog')) $('detail-dialog').close();
 });
+initWebsites(refresh);
+$('open-demo').onclick = () => document.querySelector('[data-tab="overview"]').click();
 if (await sessionStatus()) await refresh();
 setInterval(refresh, 1200);

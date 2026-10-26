@@ -12,6 +12,7 @@ test('Judges can follow the complete local recovery and incompatible rollback', 
   const errors: string[] = [];
   page.on('pageerror', (err) => errors.push(err.message));
   await page.goto('/');
+  await page.getByRole('button', { name: 'Demo overview', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Keep your workflows correct.' })).toBeVisible();
   await page.getByRole('button', { name: 'Run local demo' }).click();
   await expect(page.locator('#health-value')).toHaveText('Healthy', { timeout: 45000 });
@@ -28,7 +29,7 @@ test('Judges can follow the complete local recovery and incompatible rollback', 
   await page.getByRole('button', { name: 'Workflow versions' }).click();
   await page.getByRole('button', { name: 'Restore previous active version' }).click();
   await expect(page.locator('#health-value')).toHaveText('Degraded');
-  await page.getByRole('button', { name: 'Overview', exact: false }).click();
+  await page.getByRole('button', { name: 'Demo overview', exact: true }).click();
   await expect(page.locator('#quote-badge')).toHaveText('WITHHELD');
   expect(errors).toEqual([]);
 });
@@ -36,6 +37,9 @@ test('Judges can follow the complete local recovery and incompatible rollback', 
 test('Mobile layout stays within viewport and keeps controls usable', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Inspect website', exact: false })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.getByRole('button', { name: 'Demo overview', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Read current quotation' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await page.screenshot({ path: 'artifacts/dashboard-mobile.png', fullPage: true });
@@ -92,9 +96,64 @@ test('Protected workspace shows a working sign-in and sign-out flow', async ({ b
       .fill('browser-test-fixture-password');
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();
     await expect(page.locator('#login-dialog')).not.toBeVisible();
-    await expect(page.getByRole('button', { name: 'Run local demo' })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Inspect website', exact: false })).toBeEnabled();
     await page.getByRole('button', { name: 'Sign out', exact: true }).click();
     await expect(page.locator('#login-dialog')).toBeVisible();
+  } finally {
+    await page.close();
+    await runtime.close();
+  }
+});
+
+test('Website onboarding discovers fields, monitors values, reviews a repair and exposes JSON', async ({
+  browser,
+}) => {
+  let price = '£10.00',
+    selector = 'price_color';
+  const runtime = await startRuntime({
+    dashboardPort: 0,
+    portalPort: 0,
+    dataDir: await mkdtemp(join(tmpdir(), 'ghostapi-websites-browser-')),
+    websiteReader: async (url) => ({
+      url,
+      contentType: 'text/html',
+      body: `<h1>Example book</h1><p class="${selector}">${price}</p><p class="availability">In stock</p>`,
+    }),
+  });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1050 } });
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  try {
+    await page.goto(runtime.url);
+    await page.getByLabel('Public website URL').fill('https://shop.example/book');
+    await page.getByLabel('Workflow name').fill('Example book monitor');
+    await page.getByRole('button', { name: 'Inspect website', exact: false }).click();
+    await expect(page.getByText('Review the extraction contract', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Approve contract & monitor' }).click();
+    await expect(page.locator('.website-values')).toContainText('£10.00');
+    price = '£12.00';
+    await page.getByRole('button', { name: 'Check now', exact: true }).click();
+    await expect(page.locator('.website-status')).toHaveText('changed');
+    selector = 'product-price';
+    await page.getByRole('button', { name: 'Check now', exact: true }).click();
+    await expect(page.getByText('Repair proposal ready', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Verify & apply repair' }).click();
+    await expect(page.locator('.website-check-meta')).toContainText('Contract v2');
+    await expect(page.locator('.website-status')).toHaveText('healthy');
+    const endpoint = await page
+      .getByRole('link', { name: 'Open JSON API', exact: false })
+      .getAttribute('href');
+    const data = await (await page.request.get(runtime.url + endpoint)).json();
+    expect(data.data.price).toBe('£12.00');
+    await page.getByRole('button', { name: 'Pause', exact: true }).click();
+    await expect(page.locator('.website-check-meta')).toContainText('Monitoring paused');
+    await page.screenshot({ path: 'artifacts/websites-desktop.png', fullPage: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      390,
+    );
+    await page.screenshot({ path: 'artifacts/websites-mobile.png', fullPage: true });
+    expect(errors).toEqual([]);
   } finally {
     await page.close();
     await runtime.close();

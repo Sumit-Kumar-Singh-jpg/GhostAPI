@@ -1,10 +1,26 @@
 # GhostAPI
 
-GhostAPI repairs a saved read-only website workflow when its source changes, and publishes a quotation only after independent verification. The demo supplier switches from tax-inclusive prices to prices before tax; the app detects the mismatch, inspects evidence with REA, proposes a bounded configuration patch, tests it, then activates it provisionally and performs a final replay.
+GhostAPI turns public website data into a reviewed extraction contract, monitors it for changes, and verifies replacement rules when extraction breaks. The default Websites workspace supports public HTML, structured product metadata, and top-level JSON. A separate supplier demo demonstrates the deeper TinyFish / AI / REA repair pipeline with independent quotation verification.
+
+## Website workflows
+
+1. Enter a public HTTPS detail-page URL, name the workflow, and describe what you want to track.
+2. Inspect actual response data. Review discovered fields, sample values, source rules and the response digest.
+3. Select required fields and approve a contract. A fresh check must pass before the JSON endpoint returns data.
+4. Monitor on a 15-minute, hourly, six-hour or daily interval; check immediately, pause or resume from the card.
+5. When values change, inspect the before/after history. When a required extraction rule breaks, data is withheld. If a supported alternate rule exists, review it and apply it only after another fresh source read passes.
+
+Use **Try a public book product example** for a working first inspection. Each website has an authenticated `GET /api/websites/:id/data` endpoint. It returns the source URL, observation time, contract version and extracted values; it returns HTTP 409 when the current extraction is unavailable. Sign-in is required just like the dashboard. **Archive website** stops its checks and removes its card while retaining its record in local storage.
+
+The task description records intent; the selected fields define the executable contract. This inspector does not run JavaScript, authenticate to target sites, capture browser network traffic, or infer arbitrary workflows from natural language. Product extraction supports common metadata and unambiguous selectors; JSON inspection supports top-level primitive fields. General website repairs use supported extraction alternatives and explicit operator review, not the demo's AI planner or its independent money oracle.
+
+Checks run while the Node service is awake. Sleeping pauses checks; missed intervals are not backfilled. On the selected free Render plan, restarts and deployments reset website state and history. The dashboard states these limits. This release does not provision an always-on external scheduler.
+
+Website records live in `DATA_DIR/websites.json`, separately from the supplier demo. Resetting the demo does not reset website records. See [website architecture](docs/website-workflows.md).
 
 ## Run
 
-Requires Node.js 24 and npm. Run `npm ci`, then `npm start`, and open http://127.0.0.1:3000. The executor supplier runs separately on loopback port 3001; the dashboard provides an authenticated same-origin supplier preview. Click **Run local demo** for the complete deterministic presentation. MOTOR-01 × 1 verifies to ₹1,180. All supplier prices and tax rates are synthetic.
+Requires Node.js 24 and npm. Run `npm ci`, then `npm start`, and open http://127.0.0.1:3000. Websites is the default screen. Open **Demo overview**, then **Run local demo** for the controlled repair presentation. The executor supplier runs separately on loopback port 3001; the dashboard provides an authenticated same-origin supplier preview. MOTOR-01 × 1 verifies to ₹1,180. All supplier prices and tax rates are synthetic.
 
 ## Execution and repair modes
 
@@ -52,6 +68,6 @@ Run `npm run check`, `npm run build`, `npm run test:e2e`, `npm run format:check`
 
 Opt-in live checks: `npm run smoke:remote:full -- --ai --compare`. This spends provider credits and writes an ignored receipt to `artifacts/remote-smoke.json`. The verified live run completed with TinyFish AI, 12 remote browser runs, real REA inspection, a Healthy workflow and zero outstanding sessions. Both comparison candidates passed, so recovery without REA was sufficient in this run. No causal REA improvement is claimed. TinyFish does not expose its underlying planner model version.
 
-See `docs/implementation.md` for architecture and limits. The project repairs its enrolled synthetic supplier workflow, not arbitrary websites. Formal PRD document-validator approval and event-rule acceptance remain separate from runtime verification.
+See `docs/implementation.md` for the supplier repair architecture and `docs/website-workflows.md` for real-site extraction limits. Formal PRD document-validator approval and event-rule acceptance remain separate from runtime verification.
 
 `rea-agents` is pinned to 6.7.0, with its Zod dependency overridden to 4.6.7 for GHSA-mrhx-c7xc-m3w5. Real REA capture tests verify compatibility. Use `npm ci` with the lockfile.

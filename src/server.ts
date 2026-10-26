@@ -11,6 +11,8 @@ import { applyPatch } from './domain/policy.js';
 import { validateObservation } from './domain/validator.js';
 import { installAccessControl, validateAccessOptions } from './security.js';
 import { aiPlannerProvider } from './integrations/planner.js';
+import { Websites } from './websites/service.js';
+import type { PublicPage } from './websites/public-read.js';
 
 function listen(app: express.Express, port: number, host: string): Promise<Server> {
   return new Promise((resolve, reject) => {
@@ -27,6 +29,7 @@ export async function startRuntime(
     publicOrigin?: string;
     adminPassword?: string;
     production?: boolean;
+    websiteReader?: (url: string) => Promise<PublicPage>;
   } = {},
 ) {
   const host = options.host ?? process.env.HOST ?? '127.0.0.1';
@@ -65,6 +68,13 @@ export async function startRuntime(
     throw err;
   }
   const service = new GhostService(store, portalOrigin);
+  const websites = new Websites(stateStore.dir, options.websiteReader);
+  try {
+    await websites.load();
+  } catch (error) {
+    portalServer.close();
+    throw error;
+  }
   const app = express();
   app.disable('x-powered-by');
   if (process.env.TRUST_PROXY === '1') app.set('trust proxy', 1);
@@ -110,6 +120,13 @@ export async function startRuntime(
     }
     res.json({
       state: snapshot,
+      websites: websites.snapshot(),
+      website_monitoring: {
+        scheduler: 'Checks run while this server is awake. Missed intervals are not backfilled.',
+        storage: process.env.RENDER
+          ? 'Free hosting: website history resets on restart or redeploy.'
+          : 'Website history is saved in the configured data directory.',
+      },
       busy: service.busy,
       portal_origin: portalOrigin,
       capabilities: {
@@ -147,6 +164,32 @@ export async function startRuntime(
         res.status(error.startsWith('busy:') ? 409 : 400).json({ error });
       }
     });
+  app.post('/api/websites', async (req, res) => {
+    try {
+      const body = req.body ?? {};
+      if (body.action === 'inspect')
+        res.status(202).json({ ok: true, id: await websites.inspect(body) });
+      else {
+        if (body.action === 'approve') await websites.approve(body.id, body);
+        else if (body.action === 'check') await websites.check(body.id);
+        else if (body.action === 'repair') await websites.applyRepair(body.id, body.version);
+        else if (body.action === 'pause') await websites.toggle(body.id, false);
+        else if (body.action === 'resume') await websites.toggle(body.id, true);
+        else if (body.action === 'archive') await websites.archive(body.id);
+        else throw new Error('Unknown website action.');
+        res.status(202).json({ ok: true });
+      }
+    } catch (error) {
+      res.status(400).json({ error: safeError(error) });
+    }
+  });
+  app.get('/api/websites/:id/data', (req, res) => {
+    try {
+      res.json(websites.data(req.params.id));
+    } catch (error) {
+      res.status(409).json({ error: safeError(error) });
+    }
+  });
   action('/api/baseline', () => service.baseline());
   action('/api/budget', (body) => service.setBudget(body.limit));
   action('/api/executor', (body) =>
@@ -225,6 +268,7 @@ export async function startRuntime(
       exported_at: new Date().toISOString(),
       execution_mode: service.state.executor ?? 'local-http',
       state: service.state,
+      websites: websites.snapshot(),
       tinyfish: tinyfishReadiness(),
       ablation: service.state.evaluations?.at(-1) ?? 'not_run',
     });
@@ -246,8 +290,10 @@ export async function startRuntime(
   }
   const addr = dashboardServer.address();
   if (!addr || typeof addr === 'string') throw new Error('Dashboard address unavailable');
+  websites.start();
   return {
     service,
+    websites,
     app,
     portal,
     dashboardServer,
@@ -255,6 +301,7 @@ export async function startRuntime(
     url: `http://127.0.0.1:${addr.port}`,
     portalOrigin,
     close: async () => {
+      await websites.close();
       for (const s of [dashboardServer, portalServer]) {
         s.closeAllConnections();
         await new Promise<void>((resolve, reject) =>

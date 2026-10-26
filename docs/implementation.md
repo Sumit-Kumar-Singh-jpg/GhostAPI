@@ -30,4 +30,4 @@ The Render Blueprint and Docker/Compose packaging are implemented. Actual public
 
 ## Remaining limits
 
-Arbitrary website enrollment, autonomous Agent navigation, multi-user authorization, managed shared storage, formal PRD trace-lint certification and event-rule approval are outside the verified implementation. Provider reservations are not billing receipts. Synthetic demo arithmetic is not financial guidance.
+Version 0.3 adds a separate public-response website enrollment and monitoring flow, documented in `website-workflows.md`. Arbitrary browser workflows, autonomous Agent navigation, multi-user authorization, managed shared storage, formal PRD trace-lint certification and event-rule approval remain outside the verified implementation. Provider reservations are not billing receipts. Synthetic demo arithmetic is not financial guidance.

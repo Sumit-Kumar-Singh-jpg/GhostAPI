@@ -20,13 +20,20 @@
       >
       <div class="workspace">
         <span class="workspace-icon">G</span>
-        <div>Ghost workspace<small>Developer sandbox</small></div>
+        <div>Ghost workspace<small>Website workflows</small></div>
         <span class="workspace-arrow">⌄</span>
       </div>
       <div class="nav-label">WORKSPACE</div>
       <nav aria-label="Main navigation">
-        <button class="nav-item selected" data-tab="overview" aria-label="Overview">
-          <span>▦</span> Overview <span class="nav-count">1</span></button
+        <button
+          class="nav-item selected"
+          data-tab="websites"
+          aria-label="Websites"
+          aria-current="page"
+        >
+          <span>◎</span> Websites <span class="nav-count" id="website-count">0</span></button
+        ><button class="nav-item" data-tab="overview" aria-label="Demo overview">
+          <span>▦</span> Demo overview</button
         ><button class="nav-item" data-tab="runs" aria-label="Run history">
           <span>◷</span> Run history</button
         ><button class="nav-item" data-tab="evidence" aria-label="Evidence">
@@ -41,8 +48,8 @@
 
       <div class="sidebar-bottom">
         <div class="sandbox-note">
-          <span class="dot green"></span> Local sandbox<small
-            >Read-only by design.<br />Every claim has a source.</small
+          <span class="dot green"></span> Read-only workflows<small
+            >Inspect. Monitor. Verify.<br />Every result has a source.</small
           >
         </div>
         <a href="/api/export" class="export-link">↗ Export audit trail</a>
@@ -55,62 +62,137 @@
     <div class="shell">
       <header class="topbar">
         <div class="breadcrumb">
-          Workspace <span>/</span> <strong id="breadcrumb-name">Overview</strong>
+          Workspace <span>/</span> <strong id="breadcrumb-name">Websites</strong>
         </div>
         <div class="topbar-right">
-          <span class="keycap">LOCAL</span><span class="header-divider"></span
+          <span class="keycap">WORKSPACE</span><span class="header-divider"></span
           ><span class="dot green"></span><span>System online</span
           ><span class="avatar small">D</span
           ><button id="logout-button" class="text-button" hidden>Sign out</button>
         </div>
       </header>
       <main>
-        <div class="page-heading">
-          <div>
-            <div class="eyebrow">WORKFLOW CONTROL CENTER</div>
-            <h1 id="page-title">Keep your workflows correct<span>.</span></h1>
-            <p>Detect the change. Understand the failure. Verify the repair.</p>
+        <div id="demo-intro" hidden>
+          <div class="page-heading">
+            <div>
+              <div class="eyebrow">WORKFLOW CONTROL CENTER</div>
+              <h1 id="page-title">Keep your workflows correct<span>.</span></h1>
+              <p>Detect the change. Understand the failure. Verify the repair.</p>
+            </div>
+            <div class="heading-actions">
+              <a id="portal-link" class="button secondary" target="_blank" rel="noreferrer"
+                >↗ Supplier portal</a
+              ><button id="run-demo" class="button primary"><span>▶</span> Run local demo</button>
+            </div>
           </div>
-          <div class="heading-actions">
-            <a id="portal-link" class="button secondary" target="_blank" rel="noreferrer"
-              >↗ Supplier portal</a
-            ><button id="run-demo" class="button primary"><span>▶</span> Run local demo</button>
+          <div id="mode-banner" class="mode-banner">
+            <span class="mode-symbol">◎</span>
+            <div>
+              <strong>Local HTTP replay</strong
+              ><span
+                >Real requests to your supplier sandbox · Rules fallback by default · No TinyFish
+                browser run implied</span
+              >
+            </div>
+            <span class="pill">DEVELOPMENT</span>
           </div>
+          <section class="stats" aria-label="Workflow metrics">
+            <div class="stat">
+              <div class="stat-top">WORKFLOW HEALTH <span>↗</span></div>
+              <div class="stat-value" id="health-value">Not enrolled</div>
+              <div class="stat-caption" id="health-caption">Ready for a baseline</div>
+            </div>
+            <div class="stat">
+              <div class="stat-top">ACTIVE VERSION <span>⑂</span></div>
+              <div class="stat-value mono" id="version-value">wf1 <span>/ r1</span></div>
+              <div class="stat-caption">Current configuration / site release</div>
+            </div>
+            <div class="stat">
+              <div class="stat-top">VALIDATED REPLAYS <span>✓</span></div>
+              <div class="stat-value mono" id="checks-value">0 <span>/ 0</span></div>
+              <div class="stat-caption">Accepted results / local replay attempts</div>
+            </div>
+            <div class="stat">
+              <div class="stat-top">RESERVED SPEND <span>↗</span></div>
+              <div class="stat-value mono" id="cost-value">$0.00</div>
+              <div class="stat-caption" id="cost-caption">Local HTTP replay is unmetered</div>
+            </div>
+          </section>
         </div>
-        <div id="mode-banner" class="mode-banner">
-          <span class="mode-symbol">◎</span>
-          <div>
-            <strong>Local HTTP replay</strong
-            ><span
-              >Real requests to your supplier sandbox · Rules fallback by default · No TinyFish
-              browser run implied</span
-            >
+        <section id="websites-tab" class="tab-panel">
+          <div class="page-heading">
+            <div>
+              <div class="eyebrow">DISCOVER → CONTRACT → MONITOR → REPAIR</div>
+              <h1>Your websites.<br /><span class="accent">Reliable data.</span></h1>
+              <p>Understand a public page, choose its data, and know when something changes.</p>
+            </div>
+            <button class="button secondary" id="open-demo">Explore the repair demo ↗</button>
           </div>
-          <span class="pill">DEVELOPMENT</span>
-        </div>
-        <section class="stats" aria-label="Workflow metrics">
-          <div class="stat">
-            <div class="stat-top">WORKFLOW HEALTH <span>↗</span></div>
-            <div class="stat-value" id="health-value">Not enrolled</div>
-            <div class="stat-caption" id="health-caption">Ready for a baseline</div>
+          <div class="website-summary" id="website-summary"></div>
+          <div class="website-workspace">
+            <section class="panel website-onboarding">
+              <div class="panel-heading">
+                <strong>01 / Inspect a website</strong><span class="pill subdued">READ ONLY</span>
+              </div>
+              <form id="website-form" class="website-form">
+                <label for="website-url">Public website URL</label>
+                <input
+                  id="website-url"
+                  type="url"
+                  placeholder="https://example.com/product"
+                  required
+                  maxlength="2048"
+                />
+                <label for="website-name">Workflow name</label>
+                <input
+                  id="website-name"
+                  placeholder="Product price and availability"
+                  maxlength="100"
+                />
+                <label for="website-task">What do you want to track?</label>
+                <textarea
+                  id="website-task"
+                  rows="3"
+                  maxlength="500"
+                  placeholder="Describe the data you need. You will choose the exact fields after inspection."
+                ></textarea>
+                <button class="button primary wide" id="inspect-website" type="submit">
+                  Inspect website →
+                </button>
+                <p id="website-form-message" class="muted" role="status"></p>
+                <button type="button" class="text-button" id="website-example">
+                  Try a public book product example
+                </button>
+              </form>
+              <div class="website-help">
+                <strong>What gets inspected?</strong>
+                <p>
+                  Public HTML, product metadata, and public JSON fields. Choose a specific product
+                  or detail page for the clearest result.
+                </p>
+                <p>
+                  Sign-in flows and JavaScript-only pages need a browser workflow and are not
+                  supported in this section yet.
+                </p>
+              </div>
+            </section>
+            <section class="website-collection" aria-label="Enrolled websites">
+              <div class="website-section-heading">
+                <h2>02 / Review & monitor</h2>
+                <span id="website-total" class="muted">0 websites</span>
+              </div>
+              <div id="website-list"></div>
+            </section>
           </div>
-          <div class="stat">
-            <div class="stat-top">ACTIVE VERSION <span>⑂</span></div>
-            <div class="stat-value mono" id="version-value">wf1 <span>/ r1</span></div>
-            <div class="stat-caption">Current configuration / site release</div>
-          </div>
-          <div class="stat">
-            <div class="stat-top">VALIDATED REPLAYS <span>✓</span></div>
-            <div class="stat-value mono" id="checks-value">0 <span>/ 0</span></div>
-            <div class="stat-caption">Accepted results / local replay attempts</div>
-          </div>
-          <div class="stat">
-            <div class="stat-top">RESERVED SPEND <span>↗</span></div>
-            <div class="stat-value mono" id="cost-value">$0.00</div>
-            <div class="stat-caption" id="cost-caption">Local HTTP replay is unmetered</div>
+          <div class="monitoring-notice">
+            <strong>Monitoring availability</strong>
+            <p id="website-scheduler-note">
+              Checks run while the server is awake. On free hosting, sleeping pauses checks and
+              restart or redeploy resets saved history. Use “Check now” for an immediate check.
+            </p>
           </div>
         </section>
-        <div id="overview-tab" class="tab-panel">
+        <div id="overview-tab" class="tab-panel" hidden>
           <section class="workflow-panel panel">
             <div class="panel-heading">
               <div>
@@ -332,7 +414,7 @@
           <span
             >GHOSTAPI <span class="footer-separator">/</span> BUILT FOR TRUST, NOT JUST
             COMPLETION</span
-          ><span>Controlled supplier fixture · Synthetic prices</span>
+          ><span>Public website monitoring · Controlled repair demonstration</span>
         </footer>
       </main>
     </div>

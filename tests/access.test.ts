@@ -21,6 +21,7 @@ test('Protected API requires login; cookie is HttpOnly and logout revokes it', a
   t.after(() => runtime.close());
   assert.equal((await fetch(`${runtime.url}/api/state`)).status, 401);
   assert.equal((await fetch(`${runtime.url}/api/export`)).status, 401);
+  assert.equal((await fetch(`${runtime.url}/api/supplier/catalog`)).status, 401);
   const login = await fetch(`${runtime.url}/api/login`, {
     method: 'POST',
     headers,
@@ -31,6 +32,11 @@ test('Protected API requires login; cookie is HttpOnly and logout revokes it', a
   assert.match(setCookie, /HttpOnly/);
   assert.match(setCookie, /SameSite=Strict/);
   const cookie = setCookie.split(';')[0]!;
+  const preview = await fetch(`${runtime.url}/api/supplier/catalog`, {
+    headers: { Cookie: cookie },
+  });
+  assert.equal(preview.status, 200);
+  assert.match(await preview.text(), /action="\/api\/supplier\/catalog"/);
   assert.equal(
     (await fetch(`${runtime.url}/api/state`, { headers: { Cookie: cookie } })).status,
     200,

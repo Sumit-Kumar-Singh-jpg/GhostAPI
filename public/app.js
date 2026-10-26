@@ -86,6 +86,7 @@ function render() {
     busy = pending || snapshot.busy;
   const latest = s.candidates.at(-1);
   const remote = capabilities.executor === 'tinyfish-browser';
+  $('runs-executor').textContent = remote ? 'REMOTE BROWSER' : 'LOCAL HTTP';
   $('budget-limit').value = String(s.budget_limit_usd ?? 1);
   $('budget-limit').disabled = busy || s.outstanding.length > 0;
   $('planner-budget-note').textContent =
@@ -129,7 +130,7 @@ function render() {
     : 'Local HTTP replay is unmetered';
   $('workflow-status').innerHTML =
     `<span class="dot ${healthColor}"></span> ${esc(s.health === 'NotEnrolled' ? 'Not enrolled' : s.health)}`;
-  $('portal-link').href = `${snapshot.portal_origin}/${s.release === 'r1' ? 'catalog' : 'quotes'}`;
+  $('portal-link').href = `/api/supplier/${s.release === 'r1' ? 'catalog' : 'quotes'}`;
   $('cycle-status').textContent = s.cycle
     ? `${s.cycle.runs} / 15 runs · ${Math.max(0, Math.ceil((s.cycle.deadline - Date.now()) / 1000))}s remaining`
     : 'No active evidence cycle';

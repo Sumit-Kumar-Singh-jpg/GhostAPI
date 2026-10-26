@@ -97,6 +97,10 @@ export async function startRuntime(
   });
   app.use(express.json({ limit: '3mb' }));
   installAccessControl(app, { publicOrigin, password: adminPassword, production });
+  app.use(
+    '/api/supplier',
+    createPortal(() => service.state.release, '', '/api/supplier'),
+  );
   app.get('/api/state', (_req, res) => {
     const snapshot = structuredClone(service.state);
     if (snapshot.cycle && Date.now() >= snapshot.cycle.deadline) {

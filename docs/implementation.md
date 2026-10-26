@@ -31,4 +31,3 @@ The Render Blueprint and Docker/Compose packaging are implemented. Actual public
 ## Remaining limits
 
 Arbitrary website enrollment, autonomous Agent navigation, multi-user authorization, managed shared storage, formal PRD trace-lint certification and event-rule approval are outside the verified implementation. Provider reservations are not billing receipts. Synthetic demo arithmetic is not financial guidance.
-

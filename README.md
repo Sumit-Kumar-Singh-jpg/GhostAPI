@@ -4,7 +4,7 @@ GhostAPI repairs a saved read-only website workflow when its source changes, and
 
 ## Run
 
-Requires Node.js 24 and npm. Run `npm ci`, then `npm start`, and open http://127.0.0.1:3000. The supplier runs separately on loopback port 3001. Click **Run local demo** for the complete deterministic presentation. MOTOR-01 × 1 verifies to ₹1,180. All supplier prices and tax rates are synthetic.
+Requires Node.js 24 and npm. Run `npm ci`, then `npm start`, and open http://127.0.0.1:3000. The executor supplier runs separately on loopback port 3001; the dashboard provides an authenticated same-origin supplier preview. Click **Run local demo** for the complete deterministic presentation. MOTOR-01 × 1 verifies to ₹1,180. All supplier prices and tax rates are synthetic.
 
 ## Execution and repair modes
 
@@ -40,7 +40,7 @@ Production uses administrator sign-in, an HttpOnly Secure SameSite cookie, sign-
 
 ## Render deployment
 
-`render.yaml` defines one Docker web service in Virginia (the existing account region), ephemeral state at `/app/data`, `/healthz`, and automatic deployment after CI checks pass. The selected free plan has no persistent disk: state and audit history reset on restart or deployment, and idle services can cold start. TinyFish provider calls are billed separately.
+`render.yaml` defines one Docker web service in Virginia (the existing account region), ephemeral state at `/app/data`, `/healthz`, and automatic deployment on pushes to main. The selected free plan has no persistent disk: state and audit history reset on restart or deployment, and idle services can cold start. TinyFish provider calls are billed separately.
 
 Push the configuration to the private GitHub repository, open the Render Blueprint creation flow, grant repository access if prompted, and supply ADMIN_PASSWORD and TINYFISH_API_KEY as secret environment variables. Review the free service before applying. Public hosting is complete only after Render reports the deploy live and HTTPS, authentication, a complete workflow, and the workflow have been checked.
 
@@ -55,4 +55,3 @@ Opt-in live checks: `npm run smoke:remote:full -- --ai --compare`. This spends p
 See `docs/implementation.md` for architecture and limits. The project repairs its enrolled synthetic supplier workflow, not arbitrary websites. Formal PRD document-validator approval and event-rule acceptance remain separate from runtime verification.
 
 `rea-agents` is pinned to 6.7.0, with its Zod dependency overridden to 4.6.7 for GHSA-mrhx-c7xc-m3w5. Real REA capture tests verify compatibility. Use `npm ci` with the lockfile.
-

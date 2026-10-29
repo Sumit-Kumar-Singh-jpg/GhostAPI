@@ -12,7 +12,7 @@ The Websites workspace enrolls public response data independently of the control
 | `public/websites.js` | Enrollment, field review, monitoring controls, source evidence and repair review |
 | `src/server.ts` | Authenticated API routing and lifecycle wiring |
 
-Inspection reads up to 2 MB within a 20-second transport deadline and allows at most five redirect attempts. Every destination must resolve exclusively to public unicast addresses; the actual TLS connection uses the validated address. Credentials, private destinations and authentication query parameters are rejected. Remote page scripts are parsed as inert data and never executed. No browser session or TinyFish charge is incurred by this inspector.
+Inspection reads up to 2 MB within a 20-second transport deadline and allows at most five redirect attempts. Every destination must resolve exclusively to public unicast addresses; the actual TLS connection uses the validated address. Credentials, private destinations and authentication query parameters are rejected. Remote page scripts are parsed as inert data and never executed. TinyFish Fetch additionally produces a public content preview for up to five same-origin linked pages. It uses the server-only TINYFISH_API_KEY and makes no Agent automation calls. Provider fetches have their own redirect and cache behavior; their results are untrusted, escaped report text and never executable extraction rules. Monitoring continues to use the pinned original-source transport. A provider failure is explicitly shown while original-source fields remain available. This preview is not a complete site crawl, browser network inspection, or source-code reconstruction.
 
 ## Contract lifecycle
 

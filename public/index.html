@@ -4,129 +4,28 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#111414" />
-    <title>GhostAPI — Workflow control</title>
+    <title>GhostAPI — Website to API</title>
     <link rel="stylesheet" href="/styles.css" />
     <script type="module" src="/app.js"></script>
   </head>
   <body>
-    <aside class="sidebar">
-      <a class="brand" href="/" aria-label="GhostAPI home"
-        ><span class="ghost-mark"
-          ><svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
-            <path d="M6 27V14a10 10 0 0 1 20 0v13l-5-3-5 3-5-3-5 3Z" fill="currentColor" />
-            <circle cx="12" cy="14" r="1.8" fill="#111414" />
-            <circle cx="20" cy="14" r="1.8" fill="#111414" /></svg></span
-        ><span>ghost<span class="brand-api">api</span><span class="brand-dot">.</span></span></a
-      >
-      <div class="workspace">
-        <span class="workspace-icon">G</span>
-        <div>Ghost workspace<small>Website workflows</small></div>
-        <span class="workspace-arrow">⌄</span>
-      </div>
-      <div class="nav-label">WORKSPACE</div>
-      <nav aria-label="Main navigation">
-        <button
-          class="nav-item selected"
-          data-tab="websites"
-          aria-label="Websites"
-          aria-current="page"
-        >
-          <span>◎</span> Websites <span class="nav-count" id="website-count">0</span></button
-        ><button class="nav-item" data-tab="overview" aria-label="Demo overview">
-          <span>▦</span> Demo overview</button
-        ><button class="nav-item" data-tab="runs" aria-label="Run history">
-          <span>◷</span> Run history</button
-        ><button class="nav-item" data-tab="evidence" aria-label="Evidence">
-          <span>◇</span> Evidence</button
-        ><button class="nav-item" data-tab="versions" aria-label="Workflow versions">
-          <span>⑂</span> Workflow versions
-        </button>
-        <button class="nav-item" data-tab="evaluation" aria-label="REA comparison">
-          <span>⇄</span> REA comparison
-        </button>
-      </nav>
-
-      <div class="sidebar-bottom">
-        <div class="sandbox-note">
-          <span class="dot green"></span> Read-only workflows<small
-            >Inspect. Monitor. Verify.<br />Every result has a source.</small
-          >
-        </div>
-        <a href="/api/export" class="export-link">↗ Export audit trail</a>
-        <div class="profile">
-          <span class="avatar">D</span>
-          <div>Demo operator<small>Local administrator</small></div>
-        </div>
-      </div>
-    </aside>
-    <div class="shell">
+    <div class="shell" style="margin-left: 0">
       <header class="topbar">
-        <div class="breadcrumb">
-          Workspace <span>/</span> <strong id="breadcrumb-name">Websites</strong>
-        </div>
+        <a class="brand" href="/">ghostapi.</a>
+
         <div class="topbar-right">
-          <span class="keycap">WORKSPACE</span><span class="header-divider"></span
-          ><span class="dot green"></span><span>System online</span
-          ><span class="avatar small">D</span
-          ><button id="logout-button" class="text-button" hidden>Sign out</button>
+          <span class="dot green"></span><span>System online</span
+          ><button id="logout-button" class="text-button" hidden="">Sign out</button>
         </div>
       </header>
       <main>
-        <div id="demo-intro" hidden>
-          <div class="page-heading">
-            <div>
-              <div class="eyebrow">WORKFLOW CONTROL CENTER</div>
-              <h1 id="page-title">Keep your workflows correct<span>.</span></h1>
-              <p>Detect the change. Understand the failure. Verify the repair.</p>
-            </div>
-            <div class="heading-actions">
-              <a id="portal-link" class="button secondary" target="_blank" rel="noreferrer"
-                >↗ Supplier portal</a
-              ><button id="run-demo" class="button primary"><span>▶</span> Run local demo</button>
-            </div>
-          </div>
-          <div id="mode-banner" class="mode-banner">
-            <span class="mode-symbol">◎</span>
-            <div>
-              <strong>Local HTTP replay</strong
-              ><span
-                >Real requests to your supplier sandbox · Rules fallback by default · No TinyFish
-                browser run implied</span
-              >
-            </div>
-            <span class="pill">DEVELOPMENT</span>
-          </div>
-          <section class="stats" aria-label="Workflow metrics">
-            <div class="stat">
-              <div class="stat-top">WORKFLOW HEALTH <span>↗</span></div>
-              <div class="stat-value" id="health-value">Not enrolled</div>
-              <div class="stat-caption" id="health-caption">Ready for a baseline</div>
-            </div>
-            <div class="stat">
-              <div class="stat-top">ACTIVE VERSION <span>⑂</span></div>
-              <div class="stat-value mono" id="version-value">wf1 <span>/ r1</span></div>
-              <div class="stat-caption">Current configuration / site release</div>
-            </div>
-            <div class="stat">
-              <div class="stat-top">VALIDATED REPLAYS <span>✓</span></div>
-              <div class="stat-value mono" id="checks-value">0 <span>/ 0</span></div>
-              <div class="stat-caption">Accepted results / local replay attempts</div>
-            </div>
-            <div class="stat">
-              <div class="stat-top">RESERVED SPEND <span>↗</span></div>
-              <div class="stat-value mono" id="cost-value">$0.00</div>
-              <div class="stat-caption" id="cost-caption">Local HTTP replay is unmetered</div>
-            </div>
-          </section>
-        </div>
         <section id="websites-tab" class="tab-panel">
           <div class="page-heading">
             <div>
-              <div class="eyebrow">DISCOVER → CONTRACT → MONITOR → REPAIR</div>
-              <h1>Your websites.<br /><span class="accent">Reliable data.</span></h1>
-              <p>Understand a public page, choose its data, and know when something changes.</p>
+              <div class="eyebrow">WEBSITE → DATA → API</div>
+              <h1>Turn a website into<br /><span class="accent">data you can use.</span></h1>
+              <p>Paste a link. Discover its public data. Keep your API up to date.</p>
             </div>
-            <button class="button secondary" id="open-demo">Explore the repair demo ↗</button>
           </div>
           <div class="website-summary" id="website-summary"></div>
           <div class="website-workspace">
@@ -140,45 +39,41 @@
                   id="website-url"
                   type="url"
                   placeholder="https://example.com/product"
-                  required
+                  required=""
                   maxlength="2048"
                 />
-                <label for="website-name">Workflow name</label>
-                <input
-                  id="website-name"
-                  placeholder="Product price and availability"
-                  maxlength="100"
-                />
-                <label for="website-task">What do you want to track?</label>
-                <textarea
-                  id="website-task"
-                  rows="3"
-                  maxlength="500"
-                  placeholder="Describe the data you need. You will choose the exact fields after inspection."
-                ></textarea>
+                <details>
+                  <summary>Optional details</summary>
+                  <label for="website-name">Workflow name</label
+                  ><input
+                    id="website-name"
+                    placeholder="Product price and availability"
+                    maxlength="100"
+                  /><label for="website-task">What do you want to track?</label
+                  ><textarea
+                    id="website-task"
+                    rows="3"
+                    maxlength="500"
+                    placeholder="Describe the data you need. You will choose the exact fields after inspection."
+                  ></textarea>
+                </details>
+
                 <button class="button primary wide" id="inspect-website" type="submit">
-                  Inspect website →
+                  Analyze website →
                 </button>
                 <p id="website-form-message" class="muted" role="status"></p>
-                <button type="button" class="text-button" id="website-example">
-                  Try a public book product example
-                </button>
               </form>
               <div class="website-help">
-                <strong>What gets inspected?</strong>
                 <p>
-                  Public HTML, product metadata, and public JSON fields. Choose a specific product
-                  or detail page for the clearest result.
-                </p>
-                <p>
-                  Sign-in flows and JavaScript-only pages need a browser workflow and are not
-                  supported in this section yet.
+                  Powered by TinyFish. Discovers public content and links from the supplied page.
+                  Review the fields before monitoring. Private pages and complete site
+                  reconstruction are outside this flow.
                 </p>
               </div>
             </section>
             <section class="website-collection" aria-label="Enrolled websites">
               <div class="website-section-heading">
-                <h2>02 / Review & monitor</h2>
+                <h2>02 / Review &amp; monitor</h2>
                 <span id="website-total" class="muted">0 websites</span>
               </div>
               <div id="website-list"></div>
@@ -192,224 +87,7 @@
             </p>
           </div>
         </section>
-        <div id="overview-tab" class="tab-panel" hidden>
-          <section class="workflow-panel panel">
-            <div class="panel-heading">
-              <div>
-                <span class="tiny-icon">⑂</span><strong>Supplier quotation</strong
-                ><span class="pill subdued">READ ONLY</span>
-              </div>
-              <span id="workflow-status" class="status-label"
-                ><span class="dot gray"></span> Not enrolled</span
-              >
-            </div>
-            <div class="pipeline">
-              <div class="pipeline-node" data-stage="baseline">
-                <span class="stage-icon">01</span><strong>Baseline</strong
-                ><small>Pin the contract</small>
-              </div>
-              <div class="pipeline-line"></div>
-              <div class="pipeline-node" data-stage="detect">
-                <span class="stage-icon">02</span><strong>Detect</strong
-                ><small>Catch contract drift</small>
-              </div>
-              <div class="pipeline-line"></div>
-              <div class="pipeline-node" data-stage="inspect">
-                <span class="stage-icon">03</span><strong>Inspect</strong
-                ><small>Ground the evidence</small>
-              </div>
-              <div class="pipeline-line"></div>
-              <div class="pipeline-node" data-stage="repair">
-                <span class="stage-icon">04</span><strong>Repair</strong
-                ><small>Propose a bounded diff</small>
-              </div>
-              <div class="pipeline-line"></div>
-              <div class="pipeline-node" data-stage="verify">
-                <span class="stage-icon">05</span><strong>Verify</strong
-                ><small>Replay before trust</small>
-              </div>
-            </div>
-            <div class="workflow-footer">
-              <span
-                ><span class="dot green"></span>
-                <code>get_supplier_quote(sku, quantity)</code></span
-              ><span id="cycle-status">No active evidence cycle</span>
-            </div>
-          </section>
-          <div class="content-grid">
-            <div class="main-column">
-              <section class="panel timeline-panel">
-                <div class="panel-heading">
-                  <div>
-                    <span class="tiny-icon">◷</span><strong>Activity timeline</strong
-                    ><span class="count-badge" id="event-count">0</span>
-                  </div>
-                  <span class="live-label"><span class="dot green"></span> LIVE LOCAL EVENTS</span>
-                </div>
-                <div id="timeline" class="timeline">
-                  <div class="empty-state">
-                    <div class="empty-icon">⌁</div>
-                    <h3>Your workflow story starts here.</h3>
-                    <p>
-                      Run the local demo to watch a quote contract break,<br />get diagnosed, and
-                      recover through verified replay.
-                    </p>
-                    <span class="empty-hint"
-                      >One portal. One deliberate change. Full provenance.</span
-                    >
-                  </div>
-                </div>
-              </section>
-              <section class="panel">
-                <div class="panel-heading">
-                  <div><span class="tiny-icon">±</span><strong>Repair proposal</strong></div>
-                  <span id="planner-label" class="pill subdued">NO CANDIDATE</span>
-                </div>
-                <div id="repair-diff" class="diff-empty">
-                  Configuration changes will appear here after inspection.
-                </div>
-                <div class="panel-actions">
-                  <button id="verify-button" class="button secondary" disabled>
-                    Run shadow tests</button
-                  ><button id="promote-button" class="button primary" disabled>
-                    Verify &amp; publish ↗
-                  </button>
-                </div>
-              </section>
-            </div>
-            <div class="side-column">
-              <section class="panel quote-panel">
-                <div class="panel-heading">
-                  <div><span class="tiny-icon">↗</span><strong>Latest quotation</strong></div>
-                  <span id="quote-badge" class="pill subdued">AWAITING RUN</span>
-                </div>
-                <div id="quote-result" class="quote-body">
-                  <div class="quote-placeholder">₹<span>—</span></div>
-                  <p class="muted">A result is published only after its applicable checks pass.</p>
-                </div>
-              </section>
-              <section class="panel controls-panel">
-                <div class="panel-heading">
-                  <div><span class="tiny-icon">⚑</span><strong>Operator controls</strong></div>
-                  <span class="pill subdued">ISOLATED</span>
-                </div>
-                <div class="control-body">
-                  <label class="field-label" for="execution-mode">Execution engine</label>
-                  <select id="execution-mode" class="wide-select">
-                    <option value="local-http">Local HTTP replay</option>
-                    <option value="tinyfish-browser">TinyFish remote browser</option>
-                  </select>
-                  <button id="reconcile-button" class="button subtle wide" hidden>
-                    Reconcile browser cleanup
-                  </button>
-                  <label class="field-label" for="budget-limit">Cycle reservation cap (USD)</label>
-                  <select id="budget-limit" class="wide-select">
-                    <option value="1">$1 · HTTP / browser replay</option>
-                    <option value="3">$3 · Includes one AI proposal</option>
-                    <option value="6">$6 · Paired AI comparison</option>
-                    <option value="10">$10 · Custom reserve</option>
-                  </select>
-                  <p id="planner-budget-note" class="muted">
-                    A reservation is an upper bound, not an actual charge.
-                  </p>
-                  <label class="field-label">Site release</label>
-                  <div class="release-switch">
-                    <button data-release="r1" class="release-button active">
-                      r1 <small>Inclusive</small></button
-                    ><button data-release="r2" class="release-button">
-                      r2 <small>Before tax</small>
-                    </button>
-                  </div>
-                  <label class="field-label" for="sku">Quotation input</label>
-                  <div class="input-row">
-                    <select id="sku" aria-label="Product SKU">
-                      <option>MOTOR-01</option>
-                      <option>SENSOR-01</option>
-                      <option>BATTERY-01</option>
-                      <option>UNAVAILABLE-01</option></select
-                    ><input
-                      id="quantity"
-                      type="number"
-                      min="1"
-                      max="1000"
-                      value="1"
-                      aria-label="Quantity"
-                    />
-                  </div>
-                  <button id="quote-button" class="button secondary wide">
-                    Read current quotation ↗
-                  </button>
-                  <div class="control-divider"></div>
-                  <div class="action-grid">
-                    <button id="baseline-button" class="button subtle">01 · Baseline</button
-                    ><button id="inspect-button" class="button subtle">03 · Inspect</button
-                    ><button id="propose-button" class="button subtle">04 · Propose</button
-                    ><button id="bad-patch-button" class="button subtle">Test bad patch</button>
-                  </div>
-                  <label class="checkbox-label"
-                    ><input type="checkbox" id="use-llm" /> Use AI repair planner</label
-                  >
-                  <div class="upload-row">
-                    <button id="evaluate-button" class="button subtle">
-                      Compare with / without REA
-                    </button>
-                  </div>
-                  <div class="upload-row">
-                    <label for="har-file" class="upload-label">↑ Import operator HAR</label
-                    ><input
-                      id="har-file"
-                      type="file"
-                      accept=".har,.json,application/json"
-                      hidden
-                    /><button id="reset-button" class="text-button">Reset sandbox</button>
-                  </div>
-                </div>
-              </section>
-              <section class="integration-note">
-                <span>◈</span>
-                <div>
-                  <strong>Honest integrations</strong>
-                  <p id="integration-status">
-                    Choose an execution engine and repair planner. REA inspection and comparison
-                    results are recorded for each completed run.
-                  </p>
-                </div>
-              </section>
-            </div>
-          </div>
-        </div>
-        <section id="runs-tab" class="tab-panel panel" hidden>
-          <div class="panel-heading">
-            <strong>Run history</strong
-            ><span class="pill subdued" id="runs-executor">LOCAL HTTP</span>
-          </div>
-          <div id="runs-list"></div>
-        </section>
-        <section id="evidence-tab" class="tab-panel panel" hidden>
-          <div class="panel-heading">
-            <strong>Evidence library</strong><span class="pill subdued">SOURCE BOUND</span>
-          </div>
-          <div id="evidence-list"></div>
-        </section>
-        <section id="versions-tab" class="tab-panel panel" hidden>
-          <div class="panel-heading">
-            <strong>Workflow versions</strong
-            ><button id="rollback-button" class="button secondary">
-              Restore previous active version
-            </button>
-          </div>
-          <div id="versions-list"></div>
-        </section>
-        <section id="evaluation-tab" class="tab-panel panel" hidden>
-          <div class="panel-heading">
-            <strong>REA comparison</strong><span class="pill subdued">PAIRED VERIFICATION</span>
-          </div>
-          <div id="evaluation-list" class="card-list">
-            <p class="muted">
-              Collect fresh REA evidence, then compare candidates with and without it.
-            </p>
-          </div>
-        </section>
+
         <footer>
           <span
             >GHOSTAPI <span class="footer-separator">/</span> BUILT FOR TRUST, NOT JUST
@@ -418,7 +96,7 @@
         </footer>
       </main>
     </div>
-    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden=""></div>
     <dialog id="detail-dialog">
       <div class="dialog-header">
         <strong id="detail-title">Details</strong
@@ -436,7 +114,7 @@
           id="admin-password"
           type="password"
           autocomplete="current-password"
-          required
+          required=""
           maxlength="256"
         /><button type="submit" class="button primary wide">Sign in</button>
         <p id="login-error" class="muted" role="alert"></p>

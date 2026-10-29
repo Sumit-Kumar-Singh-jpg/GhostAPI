@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { extract, inspectPage, type Field, type Inspection } from './inspect.js';
 import { publicUrl, readPublicPage, type PublicPage } from './public-read.js';
+import type { Discovery } from './discovery.js';
 
 type Contract = { version: number; origin: string; fields: Field[]; approved_at: string };
 type Result = {
@@ -32,6 +33,8 @@ export type Website = {
   last_checked?: string;
   error?: string;
   inspection?: Inspection;
+  discovery?: Discovery;
+  discovery_error?: string;
   contract?: Contract;
   versions: Contract[];
   result?: Result;
@@ -48,6 +51,7 @@ export class Websites {
   constructor(
     private readonly dir: string,
     private readonly reader: (url: string) => Promise<PublicPage> = readPublicPage,
+    private readonly discover?: (page: PublicPage) => Promise<Discovery>,
   ) {}
   async load() {
     await mkdir(this.dir, { recursive: true });
@@ -155,7 +159,16 @@ export class Websites {
     };
     this.sites.unshift(site);
     await this.enqueue(site, 'inspecting', async () => {
-      site.inspection = inspectPage(await this.reader(site.url));
+      const page = await this.reader(site.url);
+      site.inspection = inspectPage(page);
+      if (this.discover) {
+        try {
+          site.discovery = await this.discover(page);
+        } catch {
+          site.discovery_error =
+            'TinyFish discovery unavailable. Source fields below remain available; retry by analyzing the URL again.';
+        }
+      }
       site.status = site.inspection.fields.length ? 'ready' : 'error';
       if (!site.inspection.fields.length)
         site.error =

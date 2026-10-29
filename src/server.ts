@@ -12,6 +12,7 @@ import { validateObservation } from './domain/validator.js';
 import { installAccessControl, validateAccessOptions } from './security.js';
 import { aiPlannerProvider } from './integrations/planner.js';
 import { Websites } from './websites/service.js';
+import { discoverWebsite } from './websites/discovery.js';
 import type { PublicPage } from './websites/public-read.js';
 
 function listen(app: express.Express, port: number, host: string): Promise<Server> {
@@ -68,7 +69,11 @@ export async function startRuntime(
     throw err;
   }
   const service = new GhostService(store, portalOrigin);
-  const websites = new Websites(stateStore.dir, options.websiteReader);
+  const websites = new Websites(
+    stateStore.dir,
+    options.websiteReader,
+    !options.websiteReader && process.env.TINYFISH_API_KEY ? discoverWebsite : undefined,
+  );
   try {
     await websites.load();
   } catch (error) {

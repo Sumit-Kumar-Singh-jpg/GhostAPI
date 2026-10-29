@@ -1,16 +1,16 @@
 # GhostAPI
 
-GhostAPI turns public website data into a reviewed extraction contract, monitors it for changes, and verifies replacement rules when extraction breaks. The default Websites workspace supports public HTML, structured product metadata, and top-level JSON. A separate supplier demo demonstrates the deeper TinyFish / AI / REA repair pipeline with independent quotation verification.
+GhostAPI turns public website data into a reviewed extraction contract, monitors it for changes, and verifies replacement rules when extraction breaks. The default Websites workspace supports public HTML, structured product metadata, and top-level JSON. The interface focuses on one URL-to-data flow; supplier fixtures remain internal test infrastructure.
 
 ## Website workflows
 
-1. Enter a public HTTPS detail-page URL, name the workflow, and describe what you want to track.
-2. Inspect actual response data. Review discovered fields, sample values, source rules and the response digest.
+1. Paste a public HTTPS URL. Optional details can name the workflow.
+2. Read a TinyFish site report covering up to five linked public pages. Inspect actual response data. Review discovered fields, sample values, source rules and the response digest.
 3. Select required fields and approve a contract. A fresh check must pass before the JSON endpoint returns data.
 4. Monitor on a 15-minute, hourly, six-hour or daily interval; check immediately, pause or resume from the card.
 5. When values change, inspect the before/after history. When a required extraction rule breaks, data is withheld. If a supported alternate rule exists, review it and apply it only after another fresh source read passes.
 
-Use **Try a public book product example** for a working first inspection. Each website has an authenticated `GET /api/websites/:id/data` endpoint. It returns the source URL, observation time, contract version and extracted values; it returns HTTP 409 when the current extraction is unavailable. Sign-in is required just like the dashboard. **Archive website** stops its checks and removes its card while retaining its record in local storage.
+Use a public detail-page URL for precise fields. Each website has an authenticated `GET /api/websites/:id/data` endpoint. It returns the source URL, observation time, contract version and extracted values; it returns HTTP 409 when the current extraction is unavailable. Sign-in is required just like the dashboard. **Archive website** stops its checks and removes its card while retaining its record in local storage.
 
 The task description records intent; the selected fields define the executable contract. This inspector does not run JavaScript, authenticate to target sites, capture browser network traffic, or infer arbitrary workflows from natural language. Product extraction supports common metadata and unambiguous selectors; JSON inspection supports top-level primitive fields. General website repairs use supported extraction alternatives and explicit operator review, not the demo's AI planner or its independent money oracle.
 

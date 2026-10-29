@@ -6,45 +6,15 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-test('Judges can follow the complete local recovery and incompatible rollback', async ({
-  page,
-}) => {
-  const errors: string[] = [];
-  page.on('pageerror', (err) => errors.push(err.message));
+test('Simple home has one URL flow and no demo navigation', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Demo overview', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Keep your workflows correct.' })).toBeVisible();
-  await page.getByRole('button', { name: 'Run local demo' }).click();
-  await expect(page.locator('#health-value')).toHaveText('Healthy', { timeout: 45000 });
-  await expect(page.locator('#quote-result')).toContainText('₹1,180.00');
-  await expect(page.locator('#planner-label')).toContainText('RULES FALLBACK');
-  await expect(page.locator('#timeline')).toContainText('Verified workflow published');
-  await page.getByRole('button', { name: 'Run history' }).click();
-  await expect(page.locator('#runs-list')).toContainText('WITHHELD');
-  await page.locator('[data-run]').first().click();
-  await expect(page.locator('#detail-dialog')).toBeVisible();
-  await page.getByRole('button', { name: 'Close details' }).click();
-  await page.getByRole('button', { name: 'Evidence', exact: true }).click();
-  await expect(page.locator('#evidence-list')).toContainText('REA · supplied capture inspection');
-  await page.getByRole('button', { name: 'Workflow versions' }).click();
-  await page.getByRole('button', { name: 'Restore previous active version' }).click();
-  await expect(page.locator('#health-value')).toHaveText('Degraded');
-  await page.getByRole('button', { name: 'Demo overview', exact: true }).click();
-  await expect(page.locator('#quote-badge')).toHaveText('WITHHELD');
-  expect(errors).toEqual([]);
-});
-
-test('Mobile layout stays within viewport and keeps controls usable', async ({ page }) => {
+  await expect(page.getByRole('button', { name: 'Analyze website' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Demo overview' })).toHaveCount(0);
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/');
-  await expect(page.getByRole('button', { name: 'Inspect website', exact: false })).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-  await page.getByRole('button', { name: 'Demo overview', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Read current quotation' })).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-  await page.screenshot({ path: 'artifacts/dashboard-mobile.png', fullPage: true });
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+  ).toBeTruthy();
 });
-
 test('Browser bridge reads the real portal and prevents unenrolled navigation before the request', async ({
   browser,
   request,
@@ -96,7 +66,7 @@ test('Protected workspace shows a working sign-in and sign-out flow', async ({ b
       .fill('browser-test-fixture-password');
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();
     await expect(page.locator('#login-dialog')).not.toBeVisible();
-    await expect(page.getByRole('button', { name: 'Inspect website', exact: false })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Analyze website', exact: false })).toBeEnabled();
     await page.getByRole('button', { name: 'Sign out', exact: true }).click();
     await expect(page.locator('#login-dialog')).toBeVisible();
   } finally {
@@ -126,8 +96,9 @@ test('Website onboarding discovers fields, monitors values, reviews a repair and
   try {
     await page.goto(runtime.url);
     await page.getByLabel('Public website URL').fill('https://shop.example/book');
+    await page.getByText('Optional details', { exact: true }).click();
     await page.getByLabel('Workflow name').fill('Example book monitor');
-    await page.getByRole('button', { name: 'Inspect website', exact: false }).click();
+    await page.getByRole('button', { name: 'Analyze website', exact: false }).click();
     await expect(page.getByText('Review the extraction contract', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Approve contract & monitor' }).click();
     await expect(page.locator('.website-values')).toContainText('£10.00');

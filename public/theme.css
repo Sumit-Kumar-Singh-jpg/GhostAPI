@@ -503,3 +503,45 @@ main:not(.landing-hero) {
     padding-top: 110px;
   }
 }
+.delivery-city-presets {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.delivery-city-presets p {
+  flex-basis: 100%;
+}
+.delivery-verdict {
+  text-align: center;
+  padding: 28px 16px;
+  border: 1px solid currentColor;
+  border-radius: 16px;
+  margin: 20px 0;
+}
+.delivery-verdict.positive {
+  color: #73d33c;
+}
+.delivery-verdict.negative {
+  color: #ff453a;
+}
+.delivery-verdict.uncertain {
+  color: #e5ba65;
+}
+.delivery-verdict-symbol {
+  display: grid;
+  place-items: center;
+  width: 120px;
+  height: 120px;
+  border: 7px solid currentColor;
+  border-radius: 50%;
+  margin: 0 auto 18px;
+  font-size: 82px;
+  line-height: 1;
+  font-weight: 800;
+}
+.delivery-verdict p {
+  color: #ccc;
+  max-width: 660px;
+  margin: 12px auto;
+}

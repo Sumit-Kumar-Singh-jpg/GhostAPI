@@ -176,7 +176,7 @@ test('Reviewed delivery API monitors, validates a replacement and retires', asyn
   }
 });
 
-test('PIN matrix submits three PINs and keeps mixed outcomes visible on mobile', async ({
+test('PIN matrix automatically includes city PINs and keeps mixed outcomes visible on mobile', async ({
   page,
 }) => {
   let jobs: unknown[] = [];
@@ -210,15 +210,17 @@ test('PIN matrix submits three PINs and keeps mixed outcomes visible on mobile',
   await page.goto('/#shopping');
   await page.getByLabel('Product URL', { exact: true }).fill('https://www.amazon.in/dp/B012345678');
   await page.getByLabel('Delivery PIN', { exact: true }).fill('560064');
-  await page.getByLabel('Compare other PINs (optional)', { exact: true }).fill('110001, 400001');
   await page.getByRole('button', { name: 'Check delivery', exact: true }).click();
   await expect(page.locator('#delivery-results table')).toContainText('DELIVERABLE');
   await expect(page.locator('#delivery-results table')).toContainText('failed');
   await expect(page.locator('#delivery-results table')).toContainText('NOT_DELIVERABLE');
-  expect(submitted).toEqual({
-    url: 'https://www.amazon.in/dp/B012345678',
-    pincodes: ['560064', '110001', '400001'],
-  });
+  const request = submitted as { url: string; pincodes: string[] };
+  expect(request.url).toBe('https://www.amazon.in/dp/B012345678');
+  expect(request.pincodes).toHaveLength(60);
+  expect(new Set(request.pincodes).size).toBe(60);
+  expect(request.pincodes).toEqual(
+    expect.arrayContaining(['560064', '110001', '400001', '682555']),
+  );
   await page.setViewportSize({ width: 390, height: 844 });
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),

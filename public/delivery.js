@@ -1,3 +1,4 @@
+import { cities } from './delivery-cities.js';
 import { initDeliveryWorkflows, workflowDraftButton } from './delivery-workflows.js';
 import { monitorButton } from './monitors.js';
 import { deliveryViewer } from './delivery-viewer.js';
@@ -6,18 +7,10 @@ section.className = 'panel research-intake';
 section.innerHTML = `<h2>Check delivery to your PIN</h2><p>Amazon India product pages · experimental support. Results are agent-reported observations.</p><form id="delivery-form" class="website-form"><label for="delivery-url">Product URL</label><input id="delivery-url" type="url" required placeholder="https://www.amazon.in/dp/…"><label for="delivery-pin">Delivery PIN</label><input id="delivery-pin" inputmode="numeric" pattern="[1-9][0-9]{5}" maxlength="6" required><label for="delivery-variant">Variant (optional)</label><input id="delivery-variant" maxlength="200" placeholder="For example, 16 GB RAM / 512 GB SSD"><button class="button primary">Check delivery</button><p id="delivery-message" role="status"></p></form><div id="delivery-results" aria-live="polite"></div>`;
 document.querySelector('#research-tab .research-layout').before(section);
 section.style.marginBottom = '28px';
-const extraLabel = document.createElement('label');
-extraLabel.htmlFor = 'delivery-extra-pins';
-extraLabel.textContent = 'Compare other PINs (optional)';
-const extraInput = document.createElement('input');
-extraInput.id = 'delivery-extra-pins';
-extraInput.placeholder = '110001, 400001';
-extraInput.maxLength = 20;
-const extraHelp = document.createElement('p');
-extraHelp.className = 'muted';
-extraHelp.textContent =
-  'Add up to two PINs, separated by commas. Each PIN uses a fresh run; two run at a time. Results may differ by selected variant.';
-document.getElementById('delivery-variant').after(extraLabel, extraInput, extraHelp);
+const coverage = document.createElement('p');
+coverage.className = 'muted';
+coverage.textContent = `Automatically checks your PIN plus ${Object.keys(cities).length} unique city PINs from your list (up to 60 provider runs). Two checks run at a time; results may take several minutes. Daily limit: 120 delivery runs. Each PIN represents one delivery area.`;
+document.getElementById('delivery-variant').after(coverage);
 const results = document.getElementById('delivery-results');
 const message = document.getElementById('delivery-message');
 const viewerHost = document.createElement('div');
@@ -45,17 +38,11 @@ document.getElementById('delivery-form').onsubmit = async (event) => {
   button.disabled = true;
   try {
     message.textContent = 'Starting delivery check…';
-    const extra = extraInput.value.trim();
     const pins = [
-      document.getElementById('delivery-pin').value,
-      ...(extra ? extra.split(',').map((pin) => pin.trim()) : []),
+      ...new Set([document.getElementById('delivery-pin').value.trim(), ...Object.keys(cities)]),
     ];
-    if (
-      new Set(pins).size !== pins.length ||
-      pins.length > 3 ||
-      pins.some((pin) => !/^[1-9]\d{5}$/.test(pin))
-    )
-      throw new Error('Use one to three distinct six-digit PIN codes.');
+    if (pins.some((pin) => !/^[1-9]\d{5}$/.test(pin)))
+      throw new Error('Enter a valid six-digit PIN.');
     await post(pins.length > 1 ? '/api/delivery-matrices' : '/api/check-delivery', {
       url: document.getElementById('delivery-url').value,
       ...(pins.length > 1 ? { pincodes: pins } : { pincode: pins[0] }),
@@ -93,6 +80,45 @@ async function refresh() {
       panel.className = 'panel research-request';
       panel.style.minWidth = '0';
       panel.append(node('h3', 'PIN availability comparison'), node('p', group[0].input.url));
+      const pending = group.some((job) => ['running', 'queued'].includes(job.status));
+      const confirmed = group.filter(
+        (job) => job.status === 'completed' && job.result?.verdict === 'DELIVERABLE',
+      ).length;
+      const rejected = group.filter(
+        (job) => job.status === 'completed' && job.result?.verdict === 'NOT_DELIVERABLE',
+      ).length;
+      const variants = new Set(
+        group
+          .map((job) => job.result?.observation.observed_variant?.trim().toLowerCase())
+          .filter(Boolean),
+      );
+      const positive =
+        !pending && confirmed === group.length && group.length >= 2 && variants.size === 1;
+      const negative =
+        !pending && rejected === group.length && group.length >= 2 && variants.size === 1;
+      const verdict = node('div', '');
+      verdict.className = `delivery-verdict ${positive ? 'positive' : negative ? 'negative' : 'uncertain'}`;
+      const symbol = node('span', positive ? '✓' : negative ? '✕' : '…');
+      symbol.className = 'delivery-verdict-symbol';
+      symbol.setAttribute('aria-hidden', 'true');
+      verdict.append(
+        symbol,
+        node(
+          'h3',
+          pending
+            ? 'Checking delivery across cities'
+            : positive
+              ? 'Delivery confirmed across selected cities'
+              : negative
+                ? 'Delivery unavailable across selected cities'
+                : 'Mixed or inconclusive delivery evidence',
+        ),
+        node(
+          'p',
+          `${confirmed}/${group.length} delivery checks confirmed. Delivery availability does not establish product authenticity or seller legitimacy.`,
+        ),
+      );
+      panel.append(verdict);
       const scroll = node('div', '');
       scroll.style.overflowX = 'auto';
       scroll.style.maxWidth = '100%';
@@ -118,7 +144,7 @@ async function refresh() {
       for (const job of group) {
         const row = node('tr', '');
         for (const value of [
-          job.input.pincode,
+          `${cities[job.input.pincode] ? cities[job.input.pincode] + ' · ' : ''}${job.input.pincode}`,
           job.result?.verdict ?? job.status,
           job.result?.observation.observed_variant ?? 'Unconfirmed',
           job.result?.checked_at ? new Date(job.result.checked_at).toLocaleString() : 'Pending',

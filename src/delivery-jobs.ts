@@ -113,9 +113,9 @@ export class DeliveryJobs {
       Object.keys(data).some((key) => !['url', 'pincodes', 'variant'].includes(key)) ||
       !Array.isArray(data.pincodes) ||
       data.pincodes.length < 2 ||
-      data.pincodes.length > 3
+      data.pincodes.length > 60
     )
-      throw new Error('Compare two or three distinct PIN codes.');
+      throw new Error('Compare two to sixty distinct PIN codes.');
     const inputs = data.pincodes.map((pincode) =>
       deliveryInput({
         url: data.url,
@@ -144,10 +144,10 @@ export class DeliveryJobs {
         return { matrix_id: matrixId!, job_ids: group.map((job) => job.id) };
     }
     if (
-      this.jobs.filter((job) => job.status === 'queued').length + inputs.length > 3 ||
+      this.jobs.filter((job) => job.status === 'queued').length + inputs.length > 60 ||
       this.jobs.filter((job) => Date.parse(job.started_at) > Date.now() - 86400000).length +
         inputs.length >
-        30
+        120
     )
       throw new DeliveryLimitError('Delivery run limit reached. Try later.');
     const matrixId = randomUUID();
@@ -229,7 +229,7 @@ export class DeliveryJobs {
     if (
       this.active.size >= 2 ||
       this.jobs.filter((j) => j.status === 'running').length >= 2 ||
-      this.jobs.filter((j) => Date.parse(j.started_at) > Date.now() - 86400000).length >= 30
+      this.jobs.filter((j) => Date.parse(j.started_at) > Date.now() - 86400000).length >= 120
     )
       throw new DeliveryLimitError('Delivery run limit reached. Try later.');
     const job: Job = {

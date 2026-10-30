@@ -38,7 +38,7 @@ test('Matrix quota rejection is atomic and queued cancellation never launches', 
     await writeFile(
       join(dir, 'delivery.json'),
       JSON.stringify(
-        Array.from({ length: 29 }, (_, i) => ({ ...seed, id: String(i), status: 'completed' })),
+        Array.from({ length: 119 }, (_, i) => ({ ...seed, id: String(i), status: 'completed' })),
       ),
     );
     const restored = new DeliveryJobs(dir);
@@ -47,7 +47,7 @@ test('Matrix quota rejection is atomic and queued cancellation never launches', 
       restored.startMatrix({ url: seed.input.url, pincodes: ['560064', '110001'] }),
       /limit/,
     );
-    assert.equal(restored.list().length, 29);
+    assert.equal(restored.list().length, 119);
     await restored.close();
   } finally {
     await jobs.close();

@@ -1,5 +1,28 @@
 # GhostAPI
 
+**Phase 6 adds local scheduled checks:** choose **Monitor daily** on a completed shopping or
+internship result, or a verified source API. Open **Scheduled checks** to check now, pause,
+resume, remove, and inspect changes. Checks run only while the local server is awake.
+See [local readiness and limits](docs/local-readiness.md).
+
+**Shopping Assistant is now active:** search for products or check a listing, inspect sourced facts
+and uncertainties, compare compatible reported identifiers/currencies, and hand a listing to the
+monitoring setup. Saved results, explicit cache reuse, fresh checks and cancellation are supported.
+See [shopping scope](docs/shopping.md).
+
+**Internship Checker is now active:** review public listings or descriptions, compare an optional
+company reference website, and inspect sourced warning signs and unresolved questions. It does not
+certify company identity or declare opportunities safe/fraudulent. See [internship scope](docs/internships.md).
+
+Phase 3 adds **Discover source APIs** beneath a website preview: select a captured pagination
+control, inspect browser-observed JSON requests, and test a source endpoint only after REA evidence
+and a fresh response match newly visible fields. Changed or ambiguous mappings are withheld.
+See [source API discovery](docs/source-api-discovery.md) for supported sites, limits and routes.
+
+The local workspace has **Website Builder**, **Shopping Assistant**, and **Internship Checker**. Validated requests are saved in `DATA_DIR/requests.json`; shopping results are saved separately in `DATA_DIR/shopping.json`. Identical submissions are deduplicated and saved requests survive restarts. See [the phased build plan](docs/build-phases.md) for implementation order and acceptance criteria.
+
+Current local work: a **visual website-to-API builder**. Paste a public URL, capture its rendered state in isolated local Chrome, compare source and preview screenshots, click highlighted fields, and test approved extraction endpoints. The preview is frozen and does not execute source scripts. Failed browser captures show a labeled raw-HTML fallback. Run `npm start` and open http://127.0.0.1:3000. See [the local builder guide](docs/visual-builder.md) for scope and limitations. No deployment is part of this development milestone.
+
 GhostAPI turns public website data into a reviewed extraction contract, monitors it for changes, and verifies replacement rules when extraction breaks. The default Websites workspace supports public HTML, structured product metadata, and top-level JSON. The interface focuses on one URL-to-data flow; supplier fixtures remain internal test infrastructure.
 
 ## Website workflows
@@ -20,7 +43,7 @@ Website records live in `DATA_DIR/websites.json`, separately from the supplier d
 
 ## Run
 
-Requires Node.js 24 and npm. Run `npm ci`, then `npm start`, and open http://127.0.0.1:3000. Websites is the default screen. Open **Demo overview**, then **Run local demo** for the controlled repair presentation. The executor supplier runs separately on loopback port 3001; the dashboard provides an authenticated same-origin supplier preview. MOTOR-01 × 1 verifies to ₹1,180. All supplier prices and tax rates are synthetic.
+Requires Node.js 24 and npm. Run `npm ci`, then `npm start`, and open http://127.0.0.1:3000. Website Builder is the default screen; switch tools using the three buttons at the top. Internal supplier fixtures run separately on loopback port 3001 for automated tests and are not part of the main user flow.
 
 ## Execution and repair modes
 

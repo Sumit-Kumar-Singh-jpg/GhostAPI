@@ -21,6 +21,37 @@ test('Protected API requires login; cookie is HttpOnly and logout revokes it', a
   t.after(() => runtime.close());
   assert.equal((await fetch(`${runtime.url}/api/state`)).status, 401);
   assert.equal((await fetch(`${runtime.url}/api/export`)).status, 401);
+  assert.equal((await fetch(`${runtime.url}/api/monitors`)).status, 401);
+  assert.equal(
+    (await fetch(`${runtime.url}/api/monitors`, { method: 'POST', headers, body: '{}' })).status,
+    401,
+  );
+  assert.equal((await fetch(`${runtime.url}/api/internships`)).status, 401);
+  assert.equal(
+    (await fetch(`${runtime.url}/api/internships`, { method: 'POST', headers, body: '{}' })).status,
+    401,
+  );
+  assert.equal((await fetch(`${runtime.url}/api/websites/example/interactions`)).status, 401);
+  assert.equal(
+    (
+      await fetch(`${runtime.url}/api/websites/example/interactions`, {
+        method: 'POST',
+        headers,
+        body: '{}',
+      })
+    ).status,
+    401,
+  );
+  assert.equal(
+    (
+      await fetch(`${runtime.url}/api/websites/example/source-apis/example/replay`, {
+        method: 'POST',
+        headers,
+        body: '{}',
+      })
+    ).status,
+    401,
+  );
   assert.equal((await fetch(`${runtime.url}/api/supplier/catalog`)).status, 401);
   const login = await fetch(`${runtime.url}/api/login`, {
     method: 'POST',

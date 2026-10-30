@@ -101,13 +101,29 @@ export function initWorkspace(showLogin) {
   }
   function navigate() {
     if (active !== 'websites') drafts[active] = $('research-input').value;
-    const candidate = location.hash.slice(1);
+    const routes = {
+      websites: '/website-builder',
+      shopping: '/shopping',
+      internships: '/internships',
+    };
+    const legacy = location.hash.slice(1);
+    if (routes[legacy]) {
+      location.replace(routes[legacy]);
+      return;
+    }
+    const candidate =
+      location.pathname === '/shopping'
+        ? 'shopping'
+        : location.pathname === '/internships'
+          ? 'internships'
+          : 'websites';
     active = ['shopping', 'internships'].includes(candidate) ? candidate : 'websites';
+    document.title = `${titles[active] ?? 'Website Builder'} — GhostAPI`;
     generation++;
     document
       .querySelectorAll('[data-tool]')
       .forEach((button) =>
-        button.setAttribute('aria-pressed', String(button.dataset.tool === active)),
+        button.setAttribute('aria-current', button.dataset.tool === active ? 'page' : 'false'),
       );
     $('websites-tab').hidden = active !== 'websites';
     $('research-tab').hidden = active === 'websites';
@@ -130,12 +146,6 @@ export function initWorkspace(showLogin) {
     setInput();
     void loadRequests();
   }
-  document.querySelectorAll('[data-tool]').forEach((button) =>
-    button.addEventListener('click', () => {
-      if (location.hash === `#${button.dataset.tool}`) navigate();
-      else location.hash = button.dataset.tool;
-    }),
-  );
   window.addEventListener('hashchange', navigate);
   $('research-intent').addEventListener('change', setInput);
   $('research-form').addEventListener('submit', async (event) => {
@@ -173,6 +183,16 @@ export function initWorkspace(showLogin) {
     }
   });
   navigate();
+  if (location.pathname === '/website-builder') {
+    const handoff = sessionStorage.getItem('ghostapi-inspect-url');
+    if (handoff) {
+      sessionStorage.removeItem('ghostapi-inspect-url');
+      $('website-url').value = handoff;
+      $('website-form-message').textContent =
+        'Analyze this listing, then approve the fields you want to monitor.';
+      $('website-url').focus();
+    }
+  }
   setInterval(() => {
     if (active !== 'websites' && hasRunning) void loadRequests();
   }, 2000);

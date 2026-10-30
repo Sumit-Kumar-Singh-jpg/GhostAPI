@@ -1,5 +1,13 @@
 # GhostAPI
 
+**Reviewed delivery APIs:** complete a PIN-specific check in Shopping, choose **Review as API**,
+inspect the contract and publish a local endpoint. Each invocation starts a fresh TinyFish check.
+See [delivery workflow publishing](docs/delivery-workflows.md).
+
+Published delivery results support **Monitor daily**, change history and workflow health.
+Replacement drafts require fresh regression checks and explicit review before activation.
+See [delivery monitoring and recovery](docs/delivery-monitoring.md).
+
 **Phase 6 adds local scheduled checks:** choose **Monitor daily** on a completed shopping or
 internship result, or a verified source API. Open **Scheduled checks** to check now, pause,
 resume, remove, and inspect changes. Checks run only while the local server is awake.

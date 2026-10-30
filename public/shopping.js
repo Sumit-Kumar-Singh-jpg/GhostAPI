@@ -84,11 +84,8 @@ export function renderShopping(card, request, job, run, cancel) {
     const monitor = node('button', 'Set up monitoring', 'button secondary');
     monitor.type = 'button';
     monitor.onclick = () => {
-      document.getElementById('website-url').value = listing.url;
-      location.hash = 'websites';
-      document.getElementById('website-form-message').textContent =
-        'Analyze this listing, then approve the fields you want to monitor.';
-      document.getElementById('website-url').focus();
+      sessionStorage.setItem('ghostapi-inspect-url', listing.url);
+      location.assign('/website-builder');
     };
     section.append(monitor);
     card.append(section);

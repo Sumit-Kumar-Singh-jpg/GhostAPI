@@ -20,6 +20,28 @@ test('Protected API requires login; cookie is HttpOnly and logout revokes it', a
   const runtime = await setup();
   t.after(() => runtime.close());
   assert.equal((await fetch(`${runtime.url}/api/state`)).status, 401);
+  assert.equal((await fetch(`${runtime.url}/api/delivery-jobs`)).status, 401);
+  assert.equal((await fetch(`${runtime.url}/api/delivery-workflows`)).status, 401);
+  assert.equal(
+    (
+      await fetch(`${runtime.url}/api/delivery-workflows/example/invoke`, {
+        method: 'POST',
+        headers,
+        body: '{}',
+      })
+    ).status,
+    401,
+  );
+  assert.equal(
+    (await fetch(`${runtime.url}/api/delivery-matrices`, { method: 'POST', headers, body: '{}' }))
+      .status,
+    401,
+  );
+  assert.equal(
+    (await fetch(`${runtime.url}/api/check-delivery`, { method: 'POST', headers, body: '{}' }))
+      .status,
+    401,
+  );
   assert.equal((await fetch(`${runtime.url}/api/export`)).status, 401);
   assert.equal((await fetch(`${runtime.url}/api/monitors`)).status, 401);
   assert.equal(

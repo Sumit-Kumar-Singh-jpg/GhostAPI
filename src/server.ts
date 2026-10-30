@@ -1,4 +1,6 @@
 import 'dotenv/config';
+import { DeliveryWorkflows } from './delivery-workflows.js';
+import { DeliveryJobs, DeliveryLimitError, type DeliveryClient } from './delivery-jobs.js';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import type { Server } from 'node:http';
 import { resolve } from 'node:path';
@@ -42,6 +44,7 @@ export async function startRuntime(
     interactionCapture?: (url: string, control: ReadControl) => Promise<RenderedPage>;
     shoppingProvider?: ShoppingProvider;
     internshipProvider?: ShoppingProvider;
+    deliveryClient?: () => DeliveryClient;
   } = {},
 ) {
   const host = options.host ?? process.env.HOST ?? '127.0.0.1';
@@ -81,6 +84,8 @@ export async function startRuntime(
   }
   const service = new GhostService(store, portalOrigin);
   const requests = new ResearchRequests(stateStore.dir);
+  const delivery = new DeliveryJobs(stateStore.dir, options.deliveryClient);
+  const deliveryWorkflows = new DeliveryWorkflows(stateStore.dir, delivery);
   const shopping = new ShoppingJobs(
     stateStore.dir,
     (id) => requests.list().find((item) => item.id === id),
@@ -102,6 +107,8 @@ export async function startRuntime(
     await requests.load();
     await shopping.load();
     await internships.load();
+    await delivery.load();
+    await deliveryWorkflows.load();
   } catch (error) {
     portalServer.close();
     throw error;
@@ -114,6 +121,49 @@ export async function startRuntime(
     options.websiteReader,
   );
   const monitors = new LocalMonitors(stateStore.dir, async (target, fresh) => {
+    if (target.kind === 'delivery') {
+      const workflow = deliveryWorkflows
+        .list()
+        .find((item) => item.id === target.workflow_id && item.status === 'published');
+      if (!workflow)
+        throw new Error(
+          'Delivery API retired or unavailable. Review the replacement version; previous observations preserved.',
+        );
+      const job = fresh
+        ? await delivery.finished(
+            (
+              await deliveryWorkflows.invoke(target.workflow_id, {
+                pincode: target.pincode,
+                ...(target.variant ? { variant: target.variant } : {}),
+              })
+            ).id,
+          )
+        : delivery
+            .list()
+            .find(
+              (job) =>
+                job.contract?.id === target.workflow_id &&
+                job.input.pincode === target.pincode &&
+                job.input.variant === target.variant &&
+                job.status === 'completed' &&
+                job.result?.verdict !== 'UNKNOWN',
+            );
+      if (!job?.result || job.status !== 'completed' || job.result.verdict === 'UNKNOWN')
+        throw new Error(
+          job?.error ??
+            'Delivery evidence is uncertain; previous confirmed observations preserved. Review the workflow health.',
+        );
+      return {
+        label: `Delivery ${target.pincode}: ${workflow.spec.url}`,
+        values: {
+          PIN: job.result.observation.observed_pin ?? '',
+          Variant: job.result.observation.observed_variant ?? '',
+          Availability: job.result.verdict,
+          'Delivery message': job.result.observation.excerpt ?? '',
+          Contradiction: String(job.result.contradiction),
+        },
+      };
+    }
     if (target.kind === 'source_api') {
       if (fresh) {
         const replay = await interactions.replay(target.website_id, target.candidate_id);
@@ -185,7 +235,7 @@ export async function startRuntime(
       'Referrer-Policy': 'no-referrer',
       'Cache-Control': 'no-store',
       'Content-Security-Policy':
-        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src 'self' https://*.tetra-data.production.tinyfish.io https://tetra-streaming.tinyfish.io; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
     });
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
       const origin = req.headers.origin;
@@ -237,6 +287,93 @@ export async function startRuntime(
     }
   });
   app.get('/api/shopping', (_req, res) => res.json({ jobs: shopping.list() }));
+  app.get('/api/delivery-jobs', (_req, res) => res.json({ jobs: delivery.list() }));
+  app.get('/api/delivery-workflows', (_req, res) =>
+    res.json({ workflows: deliveryWorkflows.list() }),
+  );
+  app.get('/api/delivery-workflows/:id/openapi', (req, res) => {
+    try {
+      res.json(deliveryWorkflows.documentation(String(req.params.id), production));
+    } catch {
+      res.status(404).json({ error: 'Workflow not found.' });
+    }
+  });
+  app.post('/api/delivery-workflows', async (req, res) => {
+    try {
+      res.status(201).json({
+        workflow: req.body?.replaces_id
+          ? await deliveryWorkflows.proposeReplacement(
+              String(req.body.replaces_id),
+              String(req.body?.job_id ?? ''),
+            )
+          : await deliveryWorkflows.discover(String(req.body?.job_id ?? '')),
+      });
+    } catch (error) {
+      res.status(400).json({ error: safeError(error) });
+    }
+  });
+  app.post('/api/delivery-workflows/:id/publish', async (req, res) => {
+    try {
+      res.json({
+        workflow: await deliveryWorkflows.publish(
+          String(req.params.id),
+          String(req.body?.digest ?? ''),
+        ),
+      });
+    } catch (error) {
+      res.status(409).json({ error: safeError(error) });
+    }
+  });
+  app.post('/api/delivery-workflows/:id/validate', async (req, res) => {
+    try {
+      res.json({ workflow: await deliveryWorkflows.validateReplacement(String(req.params.id)) });
+    } catch (error) {
+      res.status(error instanceof DeliveryLimitError ? 429 : 409).json({ error: safeError(error) });
+    }
+  });
+  app.post('/api/delivery-workflows/:id/retire', async (req, res) => {
+    try {
+      await deliveryWorkflows.retire(String(req.params.id));
+      res.json({ ok: true });
+    } catch (error) {
+      res.status(400).json({ error: safeError(error) });
+    }
+  });
+  app.post('/api/delivery-workflows/:id/invoke', async (req, res) => {
+    try {
+      const job = await deliveryWorkflows.invoke(String(req.params.id), req.body);
+      res.status(202).json({ job_id: job.id, status_url: `/api/delivery-jobs/${job.id}` });
+    } catch (error) {
+      res.status(error instanceof DeliveryLimitError ? 429 : 400).json({ error: safeError(error) });
+    }
+  });
+  app.post('/api/delivery-matrices', async (req, res) => {
+    try {
+      res.status(202).json(await delivery.startMatrix(req.body));
+    } catch (error) {
+      res.status(error instanceof DeliveryLimitError ? 429 : 400).json({ error: safeError(error) });
+    }
+  });
+  app.get('/api/delivery-jobs/:id', (req, res) => {
+    const job = delivery.list().find((j) => j.id === req.params.id);
+    res.status(job ? 200 : 404).json(job ?? { error: 'Job not found.' });
+  });
+  app.post('/api/check-delivery', async (req, res) => {
+    try {
+      const job = await delivery.start(req.body);
+      res.status(202).json({ job_id: job.id, status_url: `/api/delivery-jobs/${job.id}` });
+    } catch (error) {
+      res.status(error instanceof DeliveryLimitError ? 429 : 400).json({ error: safeError(error) });
+    }
+  });
+  app.post('/api/delivery-jobs/:id/cancel', async (req, res) => {
+    try {
+      await delivery.cancel(String(req.params.id));
+      res.json({ ok: true });
+    } catch {
+      res.status(404).json({ error: 'Job not found.' });
+    }
+  });
   app.post('/api/shopping', async (req, res) => {
     try {
       res
@@ -478,6 +615,9 @@ export async function startRuntime(
       ablation: service.state.evaluations?.at(-1) ?? 'not_run',
     });
   });
+  app.get(['/website-builder', '/shopping', '/internships'], (_req, res) =>
+    res.sendFile(resolve('public/workspace.html')),
+  );
   app.use(express.static(resolve('public')));
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) =>
     res.status(400).json({ error: safeError(err) }),
@@ -507,7 +647,13 @@ export async function startRuntime(
     url: `http://127.0.0.1:${addr.port}`,
     portalOrigin,
     close: async () => {
-      await Promise.all([monitors.close(), shopping.close(), internships.close()]);
+      await Promise.all([
+        delivery.close(),
+        deliveryWorkflows.close(),
+        monitors.close(),
+        shopping.close(),
+        internships.close(),
+      ]);
       await websites.close();
       for (const s of [dashboardServer, portalServer]) {
         s.closeAllConnections();

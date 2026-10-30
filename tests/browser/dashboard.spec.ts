@@ -6,6 +6,284 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { captureRenderedPage } from '../../src/websites/render.js';
+import type { AgentRunWithStreamingResponse } from '@tiny-fish/sdk';
+
+test('Inline TinyFish viewer stays mounted, switches PINs and clears ended sessions', async ({
+  page,
+}) => {
+  let progress = 'Opening listing',
+    ended = false,
+    viewerLoads = 0;
+  await page.route('https://tetra-streaming.tinyfish.io/**', (route) => {
+    viewerLoads++;
+    return route.fulfill({
+      contentType: 'text/html',
+      body: '<html><body>Fixture live browser<canvas width="640" height="400"></canvas></body></html>',
+    });
+  });
+  await page.route('**/api/delivery-jobs', (route) =>
+    route.fulfill({
+      json: {
+        jobs: ['560064', '110001'].map((pincode, index) => ({
+          id: `live-${index}`,
+          input: { url: 'https://www.amazon.in/dp/B012345678', pincode },
+          status: ended ? 'completed' : 'running',
+          started_at: new Date().toISOString(),
+          progress: [progress],
+          ...(ended ? {} : { live_url: `https://tetra-streaming.tinyfish.io/session-${index}` }),
+        })),
+      },
+    }),
+  );
+  await page.goto('/shopping');
+  await expect(
+    page.frameLocator('#delivery-live-frame').getByText('Fixture live browser'),
+  ).toBeVisible();
+  expect(viewerLoads).toBe(1);
+  progress = 'Reading delivery evidence';
+  await expect(page.locator('.delivery-viewer')).toContainText(progress, { timeout: 8000 });
+  expect(viewerLoads).toBe(1);
+  await page.getByLabel('Active delivery check', { exact: true }).selectOption('live-1');
+  await expect(page.locator('#delivery-live-frame')).toHaveAttribute(
+    'title',
+    'TinyFish live browser for PIN 110001',
+  );
+  await expect.poll(() => viewerLoads).toBe(2);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+  ).toBeTruthy();
+  await page.screenshot({ path: 'artifacts/delivery-inline-fixture.png', fullPage: true });
+  ended = true;
+  await expect(page.locator('#delivery-live-frame')).toHaveCount(0, { timeout: 8000 });
+  await expect(page.locator('.delivery-viewer')).toContainText('Live session ended');
+  await expect(page.getByRole('link', { name: 'Open live browser separately' })).toBeHidden();
+});
+
+test('Reviewed delivery API monitors, validates a replacement and retires', async ({ browser }) => {
+  const previous = process.env.TINYFISH_API_KEY;
+  process.env.TINYFISH_API_KEY = 'fixture';
+  let calls = 0;
+  const runtime = await startRuntime({
+    dashboardPort: 0,
+    portalPort: 0,
+    dataDir: await mkdtemp(join(tmpdir(), 'workflow-ui-')),
+    deliveryClient: () => ({
+      agent: {
+        stream: async () =>
+          (async function* (): AsyncGenerator<AgentRunWithStreamingResponse> {
+            calls++;
+            yield {
+              type: 'COMPLETE',
+              run_id: `fixture-${calls}`,
+              timestamp: new Date().toISOString(),
+              status: 'COMPLETED',
+              error: null,
+              result: {
+                observed_pin: '560064',
+                observed_variant: '16 GB',
+                delivery: 'confirmed',
+                excerpt: 'Fixture delivery confirmation',
+              },
+            };
+          })(),
+      },
+    }),
+  });
+  const page = await browser.newPage();
+  try {
+    await page.request.post(runtime.url + '/api/check-delivery', {
+      headers: { 'X-GhostAPI-Client': 'dashboard' },
+      data: { url: 'https://www.amazon.in/dp/B012345678', pincode: '560064' },
+    });
+    await page.goto(runtime.url + '/#shopping');
+    await page.getByRole('button', { name: 'Review as API', exact: true }).click();
+    await expect(
+      page.getByRole('button', { name: 'Publish local API', exact: true }),
+    ).toBeDisabled();
+    await page.getByRole('checkbox').filter({ visible: true }).check();
+    await page.getByRole('button', { name: 'Publish local API', exact: true }).click();
+    await expect(
+      page.getByRole('button', { name: 'Invoke fresh check', exact: true }),
+    ).toBeVisible();
+    await page.getByLabel('Delivery PIN for this API', { exact: true }).fill('560064');
+    await page.getByLabel('Variant for this API', { exact: true }).fill('16 GB');
+    const publishedState = await (
+      await page.request.get(runtime.url + '/api/delivery-workflows')
+    ).json();
+    await page.request.post(
+      runtime.url + `/api/delivery-workflows/${publishedState.workflows[0].id}/invoke`,
+      { headers: { 'X-GhostAPI-Client': 'dashboard' }, data: { pincode: '560064' } },
+    );
+    await expect(page.getByText('Health: observed', { exact: true })).toBeVisible({
+      timeout: 10000,
+    });
+    await expect(page.getByLabel('Delivery PIN for this API', { exact: true })).toHaveValue(
+      '560064',
+    );
+    await expect(page.getByLabel('Variant for this API', { exact: true })).toHaveValue('16 GB');
+    await expect(page.getByLabel('Variant for this API', { exact: true })).toBeFocused();
+    await page.getByRole('button', { name: 'Invoke fresh check', exact: true }).click();
+    await expect(page.locator('#delivery-results')).toContainText('Published API version 1', {
+      timeout: 10000,
+    });
+    expect(calls).toBe(3);
+    const workflows = await (
+      await page.request.get(runtime.url + '/api/delivery-workflows')
+    ).json();
+    const docs = await (
+      await page.request.get(
+        runtime.url + `/api/delivery-workflows/${workflows.workflows[0].id}/openapi`,
+      )
+    ).json();
+    expect(docs.openapi).toBe('3.1.0');
+    await page.getByRole('button', { name: 'Monitor daily', exact: true }).click();
+    await expect(page.locator('.monitor-card')).toContainText('Delivery 560064');
+    await page
+      .locator('.monitor-card')
+      .getByRole('button', { name: 'Check now', exact: true })
+      .click();
+    await expect(page.locator('.monitor-card')).toContainText('unchanged');
+    await page.getByRole('button', { name: 'Prepare replacement draft', exact: true }).click();
+    await expect(
+      page.getByRole('button', { name: 'Validate replacement', exact: true }),
+    ).toBeVisible();
+    await page.getByRole('button', { name: 'Validate replacement', exact: true }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'Validation finished' })).toBeVisible();
+    await page.getByRole('checkbox').filter({ visible: true }).check();
+    await page.getByRole('button', { name: 'Publish local API', exact: true }).click();
+    await expect(
+      page.getByRole('heading', { name: 'Delivery API · version 2 · published', exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Delivery API · version 1 · retired', exact: true }),
+    ).toBeVisible();
+    await page
+      .locator('.monitor-card')
+      .getByRole('button', { name: 'Check now', exact: true })
+      .click();
+    await expect(page.locator('.monitor-card')).toContainText('retired or unavailable');
+    await page.getByRole('button', { name: 'Retire API', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Invoke fresh check', exact: true })).toHaveCount(
+      0,
+    );
+    await page.screenshot({ path: 'artifacts/delivery-workflow-ui.png', fullPage: true });
+  } finally {
+    await page.close();
+    await runtime.close();
+    if (previous === undefined) delete process.env.TINYFISH_API_KEY;
+    else process.env.TINYFISH_API_KEY = previous;
+  }
+});
+
+test('PIN matrix submits three PINs and keeps mixed outcomes visible on mobile', async ({
+  page,
+}) => {
+  let jobs: unknown[] = [];
+  let submitted: unknown;
+  await page.route('**/api/delivery-jobs', (route) => route.fulfill({ json: { jobs } }));
+  await page.route('**/api/delivery-matrices', async (route) => {
+    submitted = route.request().postDataJSON();
+    jobs = ['560064', '110001', '400001'].map((pincode, i) => ({
+      id: `matrix-${i}`,
+      matrix_id: 'fixture-matrix',
+      input: { url: 'https://www.amazon.in/dp/B012345678', pincode },
+      status: i === 1 ? 'failed' : 'completed',
+      started_at: new Date().toISOString(),
+      progress: [],
+      ...(i === 1
+        ? { error: 'Fixture source unavailable' }
+        : {
+            result: {
+              verdict: i === 0 ? 'DELIVERABLE' : 'NOT_DELIVERABLE',
+              checked_at: new Date().toISOString(),
+              observation: {
+                observed_pin: pincode,
+                observed_variant: '16 GB',
+                excerpt: 'Fixture delivery evidence',
+              },
+            },
+          }),
+    }));
+    await route.fulfill({ status: 202, json: { matrix_id: 'fixture-matrix' } });
+  });
+  await page.goto('/#shopping');
+  await page.getByLabel('Product URL', { exact: true }).fill('https://www.amazon.in/dp/B012345678');
+  await page.getByLabel('Delivery PIN', { exact: true }).fill('560064');
+  await page.getByLabel('Compare other PINs (optional)', { exact: true }).fill('110001, 400001');
+  await page.getByRole('button', { name: 'Check delivery', exact: true }).click();
+  await expect(page.locator('#delivery-results table')).toContainText('DELIVERABLE');
+  await expect(page.locator('#delivery-results table')).toContainText('failed');
+  await expect(page.locator('#delivery-results table')).toContainText('NOT_DELIVERABLE');
+  expect(submitted).toEqual({
+    url: 'https://www.amazon.in/dp/B012345678',
+    pincodes: ['560064', '110001', '400001'],
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+  ).toBeTruthy();
+  await page.screenshot({ path: 'artifacts/delivery-matrix-ui.png', fullPage: true });
+});
+
+test('Delivery UI shows progress, temporary viewing link and uncertain evidence', async ({
+  page,
+}) => {
+  let done = false;
+  await page.route('**/api/delivery-jobs', (route) =>
+    route.fulfill({
+      json: {
+        jobs: [
+          {
+            id: 'fixture',
+            input: { url: 'https://www.amazon.in/dp/B012345678', pincode: '560064' },
+            started_at: new Date().toISOString(),
+            status: done ? 'completed' : 'running',
+            run_id: 'fixture-run',
+            progress: ['Entered delivery PIN'],
+            ...(done
+              ? {
+                  result: {
+                    verdict: 'UNKNOWN',
+                    checked_at: new Date().toISOString(),
+                    observation: { delivery: 'unclear', excerpt: 'PIN could not be confirmed' },
+                  },
+                }
+              : { live_url: 'https://example.com/temporary-view' }),
+          },
+        ],
+      },
+    }),
+  );
+  await page.goto('/#shopping');
+  await expect(page.getByRole('link', { name: 'Open live browser separately' })).toHaveAttribute(
+    'target',
+    '_blank',
+  );
+  await expect(page.locator('#delivery-results')).toContainText('fixture-run');
+  done = true;
+  await expect(page.locator('#delivery-results')).toContainText('UNKNOWN', { timeout: 8000 });
+  await expect(page.getByRole('button', { name: 'Watch in this page' })).toHaveCount(0);
+  await expect(page.locator('#delivery-results')).toContainText('PIN could not be confirmed');
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+  ).toBeTruthy();
+});
+
+test('Delivery form validates retailer scope and stays out of internship workflow', async ({
+  page,
+}) => {
+  await page.goto('/#shopping');
+  await page.getByLabel('Product URL', { exact: true }).fill('https://example.com/laptop');
+  await page.getByLabel('Delivery PIN', { exact: true }).fill('560064');
+  await page.getByRole('button', { name: 'Check delivery', exact: true }).click();
+  await expect(page.locator('#delivery-message')).toContainText('Amazon India');
+  await page.getByRole('link', { name: 'Internship Checker', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Check delivery', exact: true })).toBeHidden({
+    timeout: 5000,
+  });
+});
 
 test('Opt-in monitoring shows price changes, pauses and survives reload', async ({ browser }) => {
   let price = 999;
@@ -185,7 +463,7 @@ test('Pagination capture maps a source API, replays it, then withholds changed d
   });
   const page = await browser.newPage();
   try {
-    await page.goto(runtime.url);
+    await page.goto(runtime.url + '/website-builder');
     await page.getByLabel('Public website URL').fill('https://fixture.example/');
     await page.getByRole('button', { name: 'Analyze website' }).click();
     await expect(page.locator('#visual-frame')).toBeVisible({ timeout: 45000 });
@@ -238,7 +516,7 @@ test('Rendered capture exposes source comparison and a script-free preview', asy
   });
   const page = await browser.newPage();
   try {
-    await page.goto(runtime.url);
+    await page.goto(runtime.url + '/website-builder');
     await page.getByLabel('Public website URL').fill(source.url);
     await page.getByRole('button', { name: 'Analyze website' }).click();
     await expect(page.locator('#visual-frame')).toBeVisible({ timeout: 45000 });
@@ -257,21 +535,40 @@ test('Rendered capture exposes source comparison and a script-free preview', asy
   }
 });
 
-test('Simple home has one URL flow and no demo navigation', async ({ page }) => {
+test('Motion homepage plays local MP4 and tools navigate to separate pages', async ({ page }) => {
   await page.goto('/');
+  await expect(page.locator('video source')).toHaveAttribute('type', 'video/mp4');
+  await expect
+    .poll(() => page.locator('video').evaluate((video: HTMLVideoElement) => video.readyState))
+    .toBeGreaterThanOrEqual(2);
+  await page.screenshot({ path: 'artifacts/motion-home-desktop.png' });
+  await page.getByRole('link', { name: 'Website Builder', exact: true }).click();
+  await expect(page).toHaveURL(/\/website-builder$/);
+  await page.reload();
   await expect(page.getByRole('button', { name: 'Analyze website' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Demo overview' })).toHaveCount(0);
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  await expect(page.locator('.hero-copy')).toHaveCSS('opacity', '1');
+  await page.screenshot({ path: 'artifacts/motion-home-mobile.png', fullPage: true });
+  await page.getByRole('button', { name: 'Open menu', exact: true }).click();
+  await expect(page.getByRole('link', { name: 'Internship Checker', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('button', { name: 'Open menu', exact: true })).toBeFocused();
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
   ).toBeTruthy();
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await expect
+    .poll(() => page.locator('video').evaluate((video: HTMLVideoElement) => video.paused))
+    .toBe(true);
 });
 
 test('Shopping and internship requests save locally with honest status and mobile navigation', async ({
   page,
 }) => {
-  await page.goto('/');
-  await page.getByRole('button', { name: 'Shopping Assistant', exact: true }).click();
+  await page.goto('/website-builder');
+  await page.getByRole('link', { name: 'Shopping Assistant', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Analyze website' })).not.toBeVisible();
   const product = `Headphones ${Date.now()}`;
   await page.getByLabel('Product name or details', { exact: true }).fill(product);
@@ -282,7 +579,7 @@ test('Shopping and internship requests save locally with honest status and mobil
   await page.reload();
   await expect(page.locator('#research-list')).toContainText(product);
   await expect(page.locator('#research-list')).toContainText('Not checked yet');
-  await page.getByRole('button', { name: 'Internship Checker', exact: true }).click();
+  await page.getByRole('link', { name: 'Internship Checker', exact: true }).click();
   await page
     .getByLabel('Internship link or description', { exact: true })
     .fill('Example internship asking for an application fee.');
@@ -293,7 +590,7 @@ test('Shopping and internship requests save locally with honest status and mobil
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
   ).toBeTruthy();
-  await page.getByRole('button', { name: 'Website Builder', exact: true }).click();
+  await page.getByRole('link', { name: 'Website Builder', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Analyze website' })).toBeVisible();
 });
 test('Browser bridge reads the real portal and prevents unenrolled navigation before the request', async ({
@@ -340,7 +637,7 @@ test('Protected workspace shows a working sign-in and sign-out flow', async ({ b
   });
   const page = await browser.newPage();
   try {
-    await page.goto(runtime.url);
+    await page.goto(runtime.url + '/website-builder');
     await expect(page.locator('#login-dialog')).toBeVisible();
     await page
       .getByLabel('Administrator password', { exact: true })
@@ -375,7 +672,7 @@ test('Website onboarding discovers fields, monitors values, reviews a repair and
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   try {
-    await page.goto(runtime.url);
+    await page.goto(runtime.url + '/website-builder');
     await page.getByLabel('Public website URL').fill('https://shop.example/book');
     await page.getByText('Optional details', { exact: true }).click();
     await page.getByLabel('Workflow name').fill('Example book monitor');

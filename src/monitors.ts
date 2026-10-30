@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 export type MonitorTarget =
+  | { kind: 'delivery'; workflow_id: string; pincode: string; variant?: string }
   | { kind: 'shopping' | 'internships'; request_id: string }
   | { kind: 'source_api'; website_id: string; candidate_id: string };
 export type Observation = { label: string; values: Record<string, string> };
@@ -28,6 +29,22 @@ export function monitorTarget(value: unknown): MonitorTarget {
   if (!value || typeof value !== 'object') throw new Error('Select a saved result to monitor.');
   const input = value as Record<string, unknown>;
   const id = (value: unknown) => typeof value === 'string' && /^[a-z0-9-]{1,80}$/i.test(value);
+  if (
+    input.kind === 'delivery' &&
+    id(input.workflow_id) &&
+    typeof input.pincode === 'string' &&
+    /^[1-9]\d{5}$/.test(input.pincode) &&
+    (input.variant === undefined ||
+      (typeof input.variant === 'string' &&
+        input.variant.trim().length > 0 &&
+        input.variant.length <= 200))
+  )
+    return {
+      kind: 'delivery',
+      workflow_id: String(input.workflow_id),
+      pincode: input.pincode,
+      ...(typeof input.variant === 'string' ? { variant: input.variant.trim() } : {}),
+    };
   if ((input.kind === 'shopping' || input.kind === 'internships') && id(input.request_id))
     return { kind: input.kind, request_id: String(input.request_id) };
   if (input.kind === 'source_api' && id(input.website_id) && id(input.candidate_id))

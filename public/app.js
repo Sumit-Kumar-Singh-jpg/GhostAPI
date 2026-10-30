@@ -1,4 +1,7 @@
+import { initVisual, updateVisual } from './visual.js';
 import { initWebsites, renderWebsites } from './websites.js';
+import { initWorkspace } from './workspace.js';
+import { renderMonitors } from './monitors.js';
 const $ = (id) => document.getElementById(id);
 function showLogin() {
   if (!$('login-dialog').open) $('login-dialog').showModal();
@@ -22,6 +25,8 @@ async function refresh() {
     if (!r.ok) throw new Error();
     const s = await r.json();
     renderWebsites(s.websites ?? [], s.website_monitoring);
+    updateVisual(s.websites ?? []);
+    renderMonitors(s.scheduled_checks ?? []);
   } catch {
     $('website-form-message').textContent = 'Connection unavailable. Please try again shortly.';
   } finally {
@@ -46,6 +51,7 @@ $('login-form').onsubmit = async (event) => {
   $('login-dialog').close();
   await sessionStatus();
   await refresh();
+  refreshRequests();
 };
 $('logout-button').onclick = async () => {
   await fetch('/api/logout', { method: 'POST', headers: { 'X-GhostAPI-Client': 'dashboard' } });
@@ -53,5 +59,7 @@ $('logout-button').onclick = async () => {
 };
 
 initWebsites(refresh);
+initVisual();
+const refreshRequests = initWorkspace(showLogin);
 if (await sessionStatus()) await refresh();
 setInterval(refresh, 2500);

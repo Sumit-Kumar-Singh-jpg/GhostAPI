@@ -29,9 +29,13 @@ test('Public transport rejects private, loopback, mapped, reserved and credentia
     'fe80::1',
     '::ffff:127.0.0.1',
     '192.0.2.1',
+    '64:ff9b::7f00:1',
+    '64:ff9b::a00:1',
+    '64:ff9b::a9fe:a9fe',
   ])
     assert.equal(publicAddress(ip), false, ip);
   assert.equal(publicAddress('8.8.8.8'), true);
+  assert.equal(publicAddress('64:ff9b::808:808'), true);
   for (const target of [
     'http://shop.example',
     'https://localhost',

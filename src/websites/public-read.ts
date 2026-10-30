@@ -21,14 +21,23 @@ export function publicUrl(value: string): URL {
 }
 export function publicAddress(address: string): boolean {
   try {
-    return ipaddr.process(address).range() === 'unicast';
+    const parsed = ipaddr.process(address);
+    const bytes = parsed.toByteArray();
+    // The well-known NAT64 /96 prefix encodes the destination IPv4 address.
+    // Apply the same private/reserved checks to that destination.
+    if (bytes.length === 16 && bytes.slice(0, 12).join(',') === '0,100,255,155,0,0,0,0,0,0,0,0')
+      return publicAddress(bytes.slice(12).join('.'));
+    return parsed.range() === 'unicast';
   } catch {
     return false;
   }
 }
 // Resolve and pin the address used by the TLS connection. Every redirect gets
 // its own validation; DNS rebinding cannot redirect the socket to a private IP.
-export async function readPublicPage(value: string): Promise<PublicPage> {
+export async function readPublicPage(
+  value: string,
+  asset: boolean | 'render' = false,
+): Promise<PublicPage> {
   let url = publicUrl(value);
   const signal = AbortSignal.timeout(20000);
   for (let redirect = 0; redirect < 5; redirect++) {
@@ -45,7 +54,7 @@ export async function readPublicPage(value: string): Promise<PublicPage> {
     ]);
     if (!addresses.length || addresses.some((a) => !publicAddress(a.address)))
       throw new Error('Website resolves to a private or reserved network address.');
-    const pinned = addresses[0]!;
+    const pinned = addresses.find((a) => a.family === 4) ?? addresses[0]!;
     const response = await new Promise<{
       status: number;
       location?: string;
@@ -84,7 +93,16 @@ export async function readPublicPage(value: string): Promise<PublicPage> {
           res.on('end', () =>
             resolve({
               status,
-              body: Buffer.concat(chunks).toString('utf8'),
+              body: Buffer.concat(chunks).toString(
+                asset &&
+                  !(
+                    asset === 'render'
+                      ? /text\/|javascript|application\/(?:ld\+)?json/i
+                      : /text\/css/i
+                  ).test(String(res.headers['content-type']))
+                  ? 'base64'
+                  : 'utf8',
+              ),
               contentType: String(res.headers['content-type'] ?? ''),
             }),
           );
@@ -101,7 +119,15 @@ export async function readPublicPage(value: string): Promise<PublicPage> {
       throw new Error(
         `Website returned HTTP ${response.status}. Login walls and blocked pages cannot be inspected.`,
       );
-    if (!/text\/html|application\/(?:ld\+)?json/i.test(response.contentType))
+    if (
+      !(
+        asset === 'render'
+          ? /^(?:text\/(?:html|css|javascript|plain)|application\/(?:javascript|x-javascript|(?:ld\+)?json)|image\/(?:png|jpeg|gif|webp|svg\+xml|avif)|font\/(?:woff2?|ttf|otf))(?:;|$)/i
+          : asset
+            ? /^(?:text\/css|image\/(?:png|jpeg|gif|webp|svg\+xml|avif)|font\/(?:woff2?|ttf|otf))(?:;|$)/i
+            : /text\/html|application\/(?:ld\+)?json/i
+      ).test(response.contentType)
+    )
       throw new Error('This page does not provide HTML or JSON data.');
     return { url: url.href, body: response.body, contentType: response.contentType };
   }

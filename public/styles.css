@@ -19,6 +19,46 @@
     sans-serif;
   font-size: 14px;
 }
+[hidden] {
+  display: none !important;
+}
+.workspace-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 28px 0;
+}
+.workspace-tools [aria-pressed='true'] {
+  border-color: var(--green);
+  color: var(--green);
+}
+.research-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 28px;
+  margin-bottom: 48px;
+}
+.research-intake {
+  padding: 24px;
+  align-self: start;
+}
+.research-request {
+  padding: 20px;
+  margin: 14px 0;
+  overflow-wrap: anywhere;
+}
+.research-request p {
+  white-space: pre-wrap;
+}
+#research-intent {
+  width: 100%;
+  margin: 10px 0 20px;
+}
+@media (max-width: 700px) {
+  .research-layout {
+    grid-template-columns: 1fr;
+  }
+}
 .wide-select {
   width: 100%;
   margin-bottom: 18px;
@@ -1768,4 +1808,87 @@ footer {
   #websites-tab .page-heading > button {
     margin-top: 18px;
   }
+}
+.shopping-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.shopping-listing {
+  margin: 20px 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.shopping-listing > a {
+  color: var(--green);
+  font-size: 17px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.shopping-facts {
+  width: 100%;
+  border-collapse: collapse;
+}
+.shopping-facts th,
+.shopping-facts td {
+  padding: 8px 6px;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.shopping-facts th {
+  width: 30%;
+  font-weight: 500;
+}
+.shopping-facts small {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  margin-top: 5px;
+}
+.shopping-comparison {
+  color: var(--green);
+}
+.internship-finding {
+  margin: 16px 0;
+  padding: 16px;
+  border-left: 3px solid var(--muted);
+  background: var(--surface2);
+  overflow-wrap: anywhere;
+}
+.finding-warning {
+  border-color: var(--orange);
+}
+.finding-support {
+  border-color: var(--green);
+}
+.internship-finding blockquote {
+  margin: 12px 0;
+  color: var(--muted);
+}
+.internship-finding a {
+  color: var(--green);
+}
+.scheduled-checks {
+  margin: 28px 0;
+  padding: 22px;
+}
+.scheduled-checks > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.monitor-card {
+  padding: 18px 0;
+  border-top: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.monitor-card details {
+  margin-top: 14px;
+}
+button:focus-visible,
+a:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 3px;
 }

@@ -14,6 +14,13 @@ import { aiPlannerProvider } from './integrations/planner.js';
 import { Websites } from './websites/service.js';
 import { discoverWebsite } from './websites/discovery.js';
 import type { PublicPage } from './websites/public-read.js';
+import { ResearchRequests } from './requests.js';
+import { captureRenderedPage, type RenderedPage, type ReadControl } from './websites/render.js';
+import { Interactions } from './websites/interactions.js';
+import { ShoppingJobs, type ShoppingProvider } from './shopping.js';
+import { InternshipJobs } from './internships.js';
+import { LocalMonitors } from './monitors.js';
+import { shoppingValues, internshipValues } from './monitor-observations.js';
 
 function listen(app: express.Express, port: number, host: string): Promise<Server> {
   return new Promise((resolve, reject) => {
@@ -31,6 +38,10 @@ export async function startRuntime(
     adminPassword?: string;
     production?: boolean;
     websiteReader?: (url: string) => Promise<PublicPage>;
+    websiteRenderer?: (url: string) => Promise<RenderedPage>;
+    interactionCapture?: (url: string, control: ReadControl) => Promise<RenderedPage>;
+    shoppingProvider?: ShoppingProvider;
+    internshipProvider?: ShoppingProvider;
   } = {},
 ) {
   const host = options.host ?? process.env.HOST ?? '127.0.0.1';
@@ -69,18 +80,96 @@ export async function startRuntime(
     throw err;
   }
   const service = new GhostService(store, portalOrigin);
+  const requests = new ResearchRequests(stateStore.dir);
+  const shopping = new ShoppingJobs(
+    stateStore.dir,
+    (id) => requests.list().find((item) => item.id === id),
+    options.shoppingProvider,
+  );
+  const internships = new InternshipJobs(
+    stateStore.dir,
+    (id) => requests.list().find((item) => item.id === id),
+    options.internshipProvider,
+  );
   const websites = new Websites(
     stateStore.dir,
     options.websiteReader,
     !options.websiteReader && process.env.TINYFISH_API_KEY ? discoverWebsite : undefined,
+    options.websiteRenderer ?? (options.websiteReader ? undefined : captureRenderedPage),
   );
   try {
     await websites.load();
+    await requests.load();
+    await shopping.load();
+    await internships.load();
   } catch (error) {
     portalServer.close();
     throw error;
   }
   const app = express();
+  const interactions = new Interactions(
+    stateStore.dir,
+    (id) => websites.interactionSource(id),
+    options.interactionCapture,
+    options.websiteReader,
+  );
+  const monitors = new LocalMonitors(stateStore.dir, async (target, fresh) => {
+    if (target.kind === 'source_api') {
+      if (fresh) {
+        const replay = await interactions.replay(target.website_id, target.candidate_id);
+        return {
+          label: `Source API: ${replay.source}`,
+          values: Object.fromEntries(
+            replay.fields.map((field) => [field.path.join('.'), field.value]),
+          ),
+        };
+      }
+      const candidate = (await interactions.list(target.website_id))
+        .flatMap((report) => report.candidates)
+        .find((item) => item.id === target.candidate_id && item.status === 'verified');
+      if (!candidate) throw new Error('Verify the source API before scheduling a check.');
+      return {
+        label: `Source API: ${candidate.url}`,
+        values: Object.fromEntries(
+          candidate.fields.map((field) => [field.path.join('.'), field.value]),
+        ),
+      };
+    }
+    const request = requests
+      .list()
+      .find((item) => item.id === target.request_id && item.tool === target.kind);
+    if (!request) throw new Error('Saved request not found.');
+    if (target.kind === 'shopping') {
+      const job = fresh
+        ? await shopping.finished((await shopping.start(request.id, true)).job.id)
+        : shopping.list().find((item) => item.request_id === request.id);
+      if (!job?.result || job.status !== 'completed')
+        throw new Error(
+          'Shopping check failed or returned partial information. Previous observations preserved.',
+        );
+      return {
+        label: `Shopping: ${request.input.slice(0, 120)}`,
+        values: shoppingValues(job.result),
+      };
+    }
+    const job = fresh
+      ? await internships.finished((await internships.start(request.id, true)).job.id)
+      : internships.list().find((item) => item.request_id === request.id);
+    if (!job?.result || job.status !== 'completed')
+      throw new Error(
+        'Internship check failed or could not corroborate the source. Previous observations preserved.',
+      );
+    return {
+      label: `Internship: ${request.input.slice(0, 120)}`,
+      values: internshipValues(job.result),
+    };
+  });
+  try {
+    await monitors.load();
+  } catch (error) {
+    portalServer.close();
+    throw error;
+  }
   app.disable('x-powered-by');
   if (process.env.TRUST_PROXY === '1') app.set('trust proxy', 1);
   app.get('/healthz', (_req, res) => res.json({ status: 'ok', service: 'ghostapi' }));
@@ -112,6 +201,87 @@ export async function startRuntime(
   });
   app.use(express.json({ limit: '3mb' }));
   installAccessControl(app, { publicOrigin, password: adminPassword, production });
+  app.get('/api/monitors', (_req, res) => res.json({ monitors: monitors.list() }));
+  app.post('/api/monitors', async (req, res) => {
+    try {
+      const body = req.body ?? {};
+      if (body.action === 'create')
+        await monitors.create(body.target, body.interval_minutes ?? 1440);
+      else if (body.action === 'check') await monitors.check(String(body.id));
+      else if (body.action === 'pause' || body.action === 'resume')
+        await monitors.update(String(body.id), body.action === 'resume');
+      else if (body.action === 'remove') await monitors.remove(String(body.id));
+      else throw new Error('Unknown scheduled-check action.');
+      res.json({ monitors: monitors.list() });
+    } catch (error) {
+      res.status(409).json({ error: safeError(error) });
+    }
+  });
+  app.get('/api/internships', (_req, res) => res.json({ jobs: internships.list() }));
+  app.post('/api/internships', async (req, res) => {
+    try {
+      res
+        .status(202)
+        .json(
+          await internships.start(String(req.body?.request_id ?? ''), req.body?.fresh === true),
+        );
+    } catch (error) {
+      res.status(400).json({ error: safeError(error) });
+    }
+  });
+  app.post('/api/internships/:id/cancel', async (req, res) => {
+    try {
+      res.json({ job: await internships.cancel(String(req.params.id)) });
+    } catch (error) {
+      res.status(400).json({ error: safeError(error) });
+    }
+  });
+  app.get('/api/shopping', (_req, res) => res.json({ jobs: shopping.list() }));
+  app.post('/api/shopping', async (req, res) => {
+    try {
+      res
+        .status(202)
+        .json(await shopping.start(String(req.body?.request_id ?? ''), req.body?.fresh === true));
+    } catch (error) {
+      res.status(400).json({ error: safeError(error) });
+    }
+  });
+  app.post('/api/shopping/:id/cancel', async (req, res) => {
+    try {
+      res.json({ job: await shopping.cancel(String(req.params.id)) });
+    } catch (error) {
+      res.status(400).json({ error: safeError(error) });
+    }
+  });
+  app.get('/api/websites/:id/interactions', async (req, res) => {
+    try {
+      res.json({ reports: await interactions.list(String(req.params.id)) });
+    } catch (error) {
+      res.status(400).json({ error: safeError(error) });
+    }
+  });
+  app.post('/api/websites/:id/interactions', async (req, res) => {
+    try {
+      res.json({ report: await interactions.run(String(req.params.id), req.body?.control_id) });
+    } catch (error) {
+      res.status(409).json({ error: safeError(error) });
+    }
+  });
+  app.post('/api/websites/:id/source-apis/:candidate/replay', async (req, res) => {
+    try {
+      res.json(await interactions.replay(String(req.params.id), String(req.params.candidate)));
+    } catch (error) {
+      res.status(409).json({ error: safeError(error) });
+    }
+  });
+  app.get('/api/requests', (_req, res) => res.json({ requests: requests.list() }));
+  app.post('/api/requests', async (req, res) => {
+    try {
+      res.status(201).json({ request: await requests.create(req.body) });
+    } catch (error) {
+      res.status(400).json({ error: safeError(error) });
+    }
+  });
   app.use(
     '/api/supplier',
     createPortal(() => service.state.release, '', '/api/supplier'),
@@ -126,6 +296,7 @@ export async function startRuntime(
     res.json({
       state: snapshot,
       websites: websites.snapshot(),
+      scheduled_checks: monitors.list(),
       website_monitoring: {
         scheduler: 'Checks run while this server is awake. Missed intervals are not backfilled.',
         storage: process.env.RENDER
@@ -191,6 +362,35 @@ export async function startRuntime(
   app.get('/api/websites/:id/data', (req, res) => {
     try {
       res.json(websites.data(req.params.id));
+    } catch (error) {
+      res.status(409).json({ error: safeError(error) });
+    }
+  });
+  app.get('/api/websites/:id/visual', async (req, res) => {
+    try {
+      const { html: _html, ...visual } = await websites.visual(
+        String(req.params.id),
+        req.query.rebuild === '1',
+      );
+      res.json(visual);
+    } catch (error) {
+      res.status(400).json({ error: safeError(error) });
+    }
+  });
+  app.get('/api/websites/:id/preview', (req, res) => {
+    try {
+      res.set(
+        'Content-Security-Policy',
+        "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; script-src 'none'; connect-src 'none'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'",
+      );
+      res.type('html').send(websites.preview(String(req.params.id)));
+    } catch (error) {
+      res.status(400).json({ error: safeError(error) });
+    }
+  });
+  app.get('/api/websites/:id/fields/:key', (req, res) => {
+    try {
+      res.json(websites.field(String(req.params.id), String(req.params.key)));
     } catch (error) {
       res.status(409).json({ error: safeError(error) });
     }
@@ -296,6 +496,7 @@ export async function startRuntime(
   const addr = dashboardServer.address();
   if (!addr || typeof addr === 'string') throw new Error('Dashboard address unavailable');
   websites.start();
+  monitors.start();
   return {
     service,
     websites,
@@ -306,6 +507,7 @@ export async function startRuntime(
     url: `http://127.0.0.1:${addr.port}`,
     portalOrigin,
     close: async () => {
+      await Promise.all([monitors.close(), shopping.close(), internships.close()]);
       await websites.close();
       for (const s of [dashboardServer, portalServer]) {
         s.closeAllConnections();
@@ -319,7 +521,7 @@ export async function startRuntime(
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const runtime = await startRuntime();
   console.log(
-    `GhostAPI dashboard: ${runtime.url}\nRead-only supplier: ${runtime.portalOrigin}\nExecution engine is selected by the authenticated operator.`,
+    `GhostAPI local workspace: ${runtime.url}\nVisual previews and API data are stored locally.`,
   );
   for (const signal of ['SIGINT', 'SIGTERM'] as const)
     process.once(signal, () => void runtime.close().then(() => process.exit(0)));

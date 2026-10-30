@@ -4,6 +4,9 @@ import { join } from 'node:path';
 import { extract, inspectPage, type Field, type Inspection } from './inspect.js';
 import { publicUrl, readPublicPage, type PublicPage } from './public-read.js';
 import type { Discovery } from './discovery.js';
+import { buildVisual, CAPTURE_VERSION, type Visual } from './visual.js';
+import { inspectCloneCapture } from './rea.js';
+import { CAPTURE_VIEWPORT, screenshotPreview, type RenderedPage } from './render.js';
 
 type Contract = { version: number; origin: string; fields: Field[]; approved_at: string };
 type Result = {
@@ -43,6 +46,9 @@ export type Website = {
 };
 
 export class Websites {
+  private visuals = new Map<string, Visual>();
+  private visualJobs = new Map<string, Promise<Visual>>();
+  private visualQueue: Promise<unknown> = Promise.resolve();
   private sites: Website[] = [];
   private pending = Promise.resolve();
   private writes = Promise.resolve();
@@ -52,6 +58,7 @@ export class Websites {
     private readonly dir: string,
     private readonly reader: (url: string) => Promise<PublicPage> = readPublicPage,
     private readonly discover?: (page: PublicPage) => Promise<Discovery>,
+    private readonly renderer?: (url: string) => Promise<RenderedPage>,
   ) {}
   async load() {
     await mkdir(this.dir, { recursive: true });
@@ -355,6 +362,149 @@ export class Websites {
         'Approved origin and required field presence; values are supplied by the source website.',
     };
   }
+  async visual(id: string, rebuild = false) {
+    if (this.stopped) throw new Error('The workspace is shutting down.');
+    const existing = this.visualJobs.get(id);
+    if (existing) return existing;
+    const job = this.visualQueue.then(() => this.buildVisualCapture(id, rebuild));
+    this.visualJobs.set(id, job);
+    this.visualQueue = job.catch(() => {});
+    try {
+      return await job;
+    } finally {
+      this.visualJobs.delete(id);
+    }
+  }
+  private async buildVisualCapture(id: string, rebuild = false) {
+    const site = this.get(id);
+    if (!site.inspection) throw new Error('Wait for website inspection to finish.');
+    if (!rebuild) {
+      try {
+        const saved =
+          this.visuals.get(id) ??
+          (JSON.parse(await readFile(join(this.dir, `visual-${site.id}.json`), 'utf8')) as Visual);
+        if (saved.capture_version === CAPTURE_VERSION) {
+          this.visuals.set(id, saved);
+          return saved;
+        }
+      } catch (error) {
+        if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
+      }
+    }
+    let rendered: RenderedPage | undefined;
+    if (this.renderer) {
+      try {
+        rendered = await this.renderer(site.url);
+      } catch {
+        /* Keep the public HTML fallback available. */
+      }
+    }
+    const visual = await buildVisual(
+      rendered?.page ?? (await this.reader(site.url)),
+      site.contract?.fields ?? site.inspection.fields,
+      site.id,
+      rendered
+        ? async (url) => {
+            const asset = rendered.assets.get(url);
+            // Freeze the same response bytes used by the capture browser; do not refetch changed assets.
+            if (!asset) throw new Error('Asset was not loaded during browser capture.');
+            return asset;
+          }
+        : undefined,
+    );
+    if (rendered) {
+      visual.controls = rendered.controls ?? [];
+      // The generated DOM is not an HTTP response. Only original reads enter REA evidence.
+      visual.captured_requests = rendered.requests;
+      visual.notes.push(...rendered.warnings);
+      visual.rendered = {
+        mode: 'browser',
+        viewport: CAPTURE_VIEWPORT,
+        captured_at: new Date().toISOString(),
+        source_screenshot: rendered.screenshot,
+      };
+      try {
+        visual.rendered.preview_screenshot = await screenshotPreview(visual.html);
+      } catch {
+        visual.notes.push('Preview comparison screenshot could not be captured.');
+      }
+      if (rendered.warnings.some((warning) => !warning.startsWith('Captured at')))
+        visual.quality.status = 'incomplete';
+    } else if (this.renderer) {
+      visual.rendered = {
+        mode: 'static-fallback',
+        viewport: CAPTURE_VIEWPORT,
+        captured_at: new Date().toISOString(),
+      };
+      visual.quality.status = 'incomplete';
+      visual.notes.push(
+        'Browser capture failed or exceeded its limits. Showing the raw HTML fallback; JavaScript-rendered content may be missing. Rebuild to retry.',
+      );
+    }
+    try {
+      visual.rea = await inspectCloneCapture(visual.captured_requests, this.dir);
+      const source = visual.rea.requests.find(
+        (request) =>
+          request.url === visual.captured_requests[0]?.url &&
+          ['document', 'json'].includes(request.kind),
+      );
+      if (source && visual.rea.evidence_id)
+        for (const binding of visual.bindings) {
+          binding.rea_source = { evidence_id: visual.rea.evidence_id, url: source.url };
+        }
+    } catch {
+      visual.rea = {
+        status: 'unavailable',
+        requests: [],
+        limitations: [
+          'REA inspection failed or timed out. This capture has no verified REA evidence. Rebuild to retry.',
+        ],
+      };
+    }
+    const visualPath = join(this.dir, `visual-${site.id}.json`);
+    await writeFile(`${visualPath}.tmp`, JSON.stringify(visual), {
+      mode: 0o600,
+    });
+    await rename(`${visualPath}.tmp`, visualPath);
+    this.visuals.set(id, visual);
+    return visual;
+  }
+  preview(id: string) {
+    this.get(id);
+    const visual = this.visuals.get(id);
+    if (!visual) throw new Error('Build the visual preview first.');
+    return visual.html;
+  }
+  async interactionSource(id: string) {
+    const site = this.get(id);
+    let visual = this.visuals.get(id);
+    if (!visual) {
+      try {
+        visual = JSON.parse(
+          await readFile(join(this.dir, `visual-${site.id}.json`), 'utf8'),
+        ) as Visual;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+    }
+    return {
+      url: site.url,
+      controls: visual?.capture_version === CAPTURE_VERSION ? (visual.controls ?? []) : [],
+    };
+  }
+  field(id: string, key: string) {
+    const result = this.data(id);
+    if (!Object.hasOwn(result.data, key))
+      throw new Error('This field is not in the approved contract.');
+    return {
+      source: result.source,
+      at: result.at,
+      contract_version: result.contract_version,
+      field: key,
+      value: result.data[key],
+      kind: 'generated_extraction',
+    };
+  }
   start() {
     this.timer = setInterval(() => void this.tick(), 30000);
     this.timer.unref();
@@ -377,5 +527,6 @@ export class Websites {
     clearInterval(this.timer);
     await this.pending;
     await this.writes;
+    await this.visualQueue;
   }
 }
